@@ -106,8 +106,9 @@ is_space:
         str     x2, [x1]
 
         // set iInWord to FALSE
+        adr     x1, iInWord    // Re-point x1 to iInWord
         mov     w2, FALSE
-        str     w2, [x1]        // x1 still points to iInWord
+        str     w2, [x1]        // x1 now points to iInWord
 
         // proceed to check for newline
         b       check_newline
@@ -147,6 +148,11 @@ loop_end:
         ldr     x2, [x1]
         add     x2, x2, 1
         str     x2, [x1]
+
+        // set iInWord to FALSE (optional)
+        adr     x1, iInWord
+        mov     w2, FALSE
+        str     w2, [x1]
 
 print_counts:
         // prepare arguments for printf
