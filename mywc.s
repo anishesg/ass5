@@ -170,3 +170,4 @@ print_counts:
         ret
 
         .size   main, . - main
+        
