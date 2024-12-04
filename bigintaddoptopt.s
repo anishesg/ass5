@@ -63,8 +63,8 @@ BigInt_add:
     sub     sp, sp, ADDITION_STACK_SIZE
     stp     x30, x19, [sp, 0]                 // save link register and x19
     stp     x20, x21, [sp, 16]                // save x20, x21
-    stp     x22, x23, [sp, 32]                // save x22, x23
-    stp     x24, x25, [sp, 48]                // save x24, x25
+    stp     x22, x23, [sp, 32]                // save oAddend1, oAddend2
+    stp     x24, x25, [sp, 48]                // save oSum, unused (x25 can be used)
 
     // Move parameters to callee-saved registers
     mov     OADDEND1, x0                       // oAddend1 = x0
@@ -76,8 +76,14 @@ BigInt_add:
     ldr     x5, [OADDEND1, LENGTH_OFFSET]       // load oAddend1->lLength
     ldr     x6, [OADDEND2, LENGTH_OFFSET]       // load oAddend2->lLength
     cmp     x5, x6
-    movgt   x21, x5                            // if oAddend1->lLength > oAddend2->lLength, lSumLength = oAddend1->lLength
-    movle   x21, x6                            // else, lSumLength = oAddend2->lLength
+    bgt     set_lSumLength_oAddend1             // if oAddend1->lLength > oAddend2->lLength, set lSumLength = oAddend1->lLength
+    mov     x21, x6                            // else, lSumLength = oAddend2->lLength
+    b       after_inlining
+
+set_lSumLength_oAddend1:
+    mov     x21, x5                            // lSumLength = oAddend1->lLength
+
+after_inlining:
 
     // Check if oSum->lLength <= lSumLength
     ldr     x7, [OSUM, LENGTH_OFFSET]           // load oSum->lLength
@@ -92,6 +98,7 @@ BigInt_add:
     bl      memset                              // call memset
 
 skip_clear_digits:
+
     // Initialize lIndex to 0
     mov     x20, 0                              // lIndex = 0
 
@@ -99,13 +106,11 @@ skip_clear_digits:
     mov     x19, 0                              // ulSum = 0
 
     // Initialize carry flag to 0 by clearing the carry
-    clrex                                      // Clear exclusive monitor (optional, safety)
-    mov     x25, 0                              // lSumLength will be updated later if carry occurs
+    subs    xzr, xzr, xzr                      // Clear carry flag
 
     // Guarded loop setup
-    // Compute the end address based on lSumLength
-    mov     x9, x21                             // end = lSumLength
-    cmp     x20, x9
+    // Compare lIndex with lSumLength, and enter loop if lIndex < lSumLength
+    cmp     x20, x21
     bge     handle_carry                        // if lIndex >= lSumLength, handle carry
 
 addition_guarded_loop:
@@ -130,8 +135,8 @@ addition_guarded_loop:
     // Increment lIndex
     add     x20, x20, 1                           // lIndex++
 
-    // Check if lIndex < lSumLength
-    cmp     x20, x9
+    // Compare lIndex with lSumLength
+    cmp     x20, x21
     blt     addition_guarded_loop                  // continue loop if lIndex < lSumLength
 
 handle_carry:
@@ -166,7 +171,7 @@ finalize_sum_length:
     ldp     x30, x19, [sp, 0]                     // restore link register and x19
     ldp     x20, x21, [sp, 16]                    // restore x20, x21
     ldp     x22, x23, [sp, 32]                    // restore oAddend1, oAddend2
-    ldp     x24, x25, [sp, 48]                    // restore oSum, lSumLength
+    ldp     x24, x25, [sp, 48]                    // restore oSum, unused
     add     sp, sp, ADDITION_STACK_SIZE
     ret
 
@@ -177,7 +182,7 @@ overflow_detected:
     ldp     x30, x19, [sp, 0]                     // restore link register and x19
     ldp     x20, x21, [sp, 16]                    // restore x20, x21
     ldp     x22, x23, [sp, 32]                    // restore oAddend1, oAddend2
-    ldp     x24, x25, [sp, 48]                    // restore oSum, lSumLength
+    ldp     x24, x25, [sp, 48]                    // restore oSum, unused
     add     sp, sp, ADDITION_STACK_SIZE
     ret
 
