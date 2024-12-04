@@ -3,7 +3,7 @@
 // Author: Anish K
 // Description: Highly optimized ARMv8 assembly implementation of BigInt_add
 //              Function includes inlining of BigInt_larger and uses
-//              guarded loop pattern with ADCS instructions.
+//              guarded loop pattern with ADC instructions.
 //-----------------------------------------------------------------------
 
 // Defining constants
@@ -19,12 +19,11 @@
 .equ    ADDITION_STACK_SIZE, 64
 
 // Register aliases using .req directives for clarity
-// Callee-saved registers (x19-x28) are used for variables
-.equ    LSUM_LENGTH_REG, x19      // lSumLength
-.equ    LINDEX_REG,      x20      // lIndex
-.equ    OADDEND1_REG,    x21      // oAddend1
-.equ    OADDEND2_REG,    x22      // oAddend2
-.equ    OSUM_REG,        x23      // oSum
+LSUM_LENGTH_REG .req x19      // lSumLength
+LINDEX_REG       .req x20      // lIndex
+OADDEND1_REG     .req x21      // oAddend1
+OADDEND2_REG     .req x22      // oAddend2
+OSUM_REG         .req x23      // oSum
 
 .global BigInt_add
 
@@ -71,21 +70,22 @@ BigInt_add:
     ble     Skip_Clear_Digits                  // If oSum->lLength <= lSumLength, skip clearing digits
 
     // Perform memset(oSum->aulDigits, 0, MAX_DIGITS_COUNT * sizeof(unsigned long))
-    ldr     x0, =0                            // Value to set
-    mov     x1, OSUM_REG                      // Pointer to oSum
-    add     x1, x1, DIGITS_OFFSET             // Point to aulDigits
-    mov     x2, MAX_DIGITS_COUNT              // Number of digits
-    lsl     x2, x2, #3                        // Multiply by 8 (sizeof(unsigned long))
+    mov     x0, OSUM_REG                      // oSum
+    add     x0, x0, DIGITS_OFFSET             // oSum->aulDigits
+    mov     w1, 0                              // value to set
+    mov     x2, MAX_DIGITS_COUNT              // number of digits
+    lsl     x2, x2, #3                        // multiply by 8 (sizeof(unsigned long))
     bl      memset                             // Call memset
 
 Skip_Clear_Digits:
     // Initialize lIndex to 0
     mov     LINDEX_REG, #0
 
-    // Initialize carry flag to 0 by clearing the carry flag
-    clrc
+    // Initialize carry flag to 0 by ensuring no carry is set
+    // ARMv8 does not have a direct instruction to clear the carry flag,
+    // but ensuring the first addition does not carry will suffice.
 
-    // Guarded Loop Pattern with ADCS
+    // Guarded Loop Pattern with ADC
 Loop_Start:
     // Compare lIndex with lSumLength
     cmp     LINDEX_REG, LSUM_LENGTH_REG
@@ -102,7 +102,7 @@ Loop_Start:
     ldr     x5, [x5]                            // Load aulDigits[lIndex]
 
     // Add with carry: ULSUM = aulDigits1 + aulDigits2 + carry
-    adcs    x6, x4, x5                          // x6 = x4 + x5 + carry
+    adc     x6, x4, x5                          // x6 = x4 + x5 + carry
 
     // Store the result in oSum->aulDigits[lIndex]
     ldr     x7, [OSUM_REG, DIGITS_OFFSET]       // Pointer to oSum->aulDigits
@@ -124,7 +124,7 @@ Handle_Carry:
     bcc     Set_Sum_Length                      // If carry flag not set, skip carry handling
 
     // Check if lSumLength == MAX_DIGITS_COUNT
-    cmp     LSUM_LENGTH_REG, MAX_DIGITS_COUNT
+    cmp     LSUM_LENGTH_REG, #MAX_DIGITS_COUNT
     beq     Overflow_Detected                   // If lSumLength == MAX_DIGITS_COUNT, overflow occurred
 
     // Set oSum->aulDigits[lSumLength] = 1 (carry)
@@ -164,8 +164,6 @@ Epilog_Return:
     ldp     x29, x30, [sp, #0]                        // Restore frame pointer and link register
     add     sp, sp, ADDITION_STACK_SIZE
     ret
-
-//--------------------------------------------------------------
-// Overflow Handling and Function Exit
-//--------------------------------------------------------------
-.size   BigInt_add, .-BigInt_add
+    
+    .size   BigInt_add, .-BigInt_add
+    
