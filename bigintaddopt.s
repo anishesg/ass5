@@ -1,7 +1,6 @@
 //-----------------------------------------------------------------------
 // bigintaddopt.s
 // Author: anish k
-// Description: Optimized ARMv8 assembly implementation of BigInt_add and BigInt_larger
 //-----------------------------------------------------------------------
 
 // Defining constants
