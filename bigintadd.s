@@ -1,4 +1,3 @@
--------------------
 
 // defining constants
 .equ    FALSE, 0
