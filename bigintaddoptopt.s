@@ -61,8 +61,8 @@ BigInt_add:
     ldr     x4, [OADDEND1_REG, LENGTH_OFFSET] // Load oAddend1->lLength
     ldr     x5, [OADDEND2_REG, LENGTH_OFFSET] // Load oAddend2->lLength
     cmp     x4, x5
-    movgt   LSUM_LENGTH_REG, x4               // If oAddend1->lLength > oAddend2->lLength, set lSumLength = oAddend1->lLength
-    movle   LSUM_LENGTH_REG, x5               // Else, set lSumLength = oAddend2->lLength
+    csel    LSUM_LENGTH_REG, x4, x5, GT      // If oAddend1->lLength > oAddend2->lLength, set lSumLength = oAddend1->lLength
+                                             // Else, set lSumLength = oAddend2->lLength
 
     // Check if oSum->lLength > lSumLength
     ldr     x6, [OSUM_REG, LENGTH_OFFSET]     // Load oSum->lLength
@@ -164,6 +164,5 @@ Epilog_Return:
     ldp     x29, x30, [sp, #0]                        // Restore frame pointer and link register
     add     sp, sp, ADDITION_STACK_SIZE
     ret
-    
-    .size   BigInt_add, .-BigInt_add
-    
+
+.size   BigInt_add, .-BigInt_add
