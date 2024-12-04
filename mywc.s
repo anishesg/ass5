@@ -1,159 +1,179 @@
-//----------------------------------------------------------------------
-    // bigintaddoptopt.s
-    // Author: Anish K (Optimized by ChatGPT)
-    //----------------------------------------------------------------------
+//---------------------------------------------------------------------
+// mywc.s
+// author: anish k
+//---------------------------------------------------------------------
 
-    // Defining constants
-    .equ    FALSE_VAL, 0
-    .equ    TRUE_VAL, 1
-    .equ    MAX_DIGITS_COUNT, 32768
+        .equ    FALSE, 0
+        .equ    TRUE, 1
+        .equ    EOF, -1
 
-    // Structure field offsets for BigInt_T
-    .equ    LENGTH_OFFSET, 0          // offset of lLength in BigInt_T
-    .equ    DIGITS_OFFSET, 8          // offset of aulDigits in BigInt_T
+//---------------------------------------------------------------------
+// read-only data section for format strings
 
-    // Stack byte counts (should be multiples of 16 for alignment)
-    .equ    ADDITION_STACK_SIZE, 80    // Adjusted to accommodate all saved registers
+        .section .rodata
 
-    // Local variable registers using .req directives
-    // For BigInt_add
-    .req    ULCARRY, x22    // ulCarry
-    .req    ULSUM, x23      // ulSum
-    .req    LINDEX, x24     // lIndex
-    .req    LSUMLENGTH, x25  // lSumLength
+printfFormatStr:
+        .string "%7ld %7ld %7ld\n"
 
-    .req    OADDEND1, x26    // oAddend1
-    .req    OADDEND2, x27    // oAddend2
-    .req    OSUM, x28        // oSum
+//---------------------------------------------------------------------
+// data section for initialized global variables
 
-    .section .text
+        .section .data
 
-    //--------------------------------------------------------------
-    // Assign the sum of oAddend1 and oAddend2 to oSum.
-    // oSum should be distinct from oAddend1 and oAddend2.
-    // Return 0 (FALSE_VAL) if an overflow occurred, and 1 (TRUE_VAL) otherwise.
-    // int BigInt_add(BigInt_T oAddend1, BigInt_T oAddend2, BigInt_T oSum)
-    // Parameters:
-    //   x0: oAddend1
-    //   x1: oAddend2
-    //   x2: oSum
-    // Returns:
-    //   w0: TRUE_VAL (1) if successful, FALSE_VAL (0) if overflow occurred
-    //--------------------------------------------------------------
+lLineCount:
+        .quad   0       // long lLineCount = 0
 
-    .global BigInt_add
+lWordCount:
+        .quad   0       // long lWordCount = 0
 
-    BigInt_add:
+lCharCount:
+        .quad   0       // long lCharCount = 0
 
-        // Prologue: set up the stack frame
-        sub     sp, sp, ADDITION_STACK_SIZE
-        stp     x29, x30, [sp, #0]                 // Save frame pointer and link register
-        mov     x29, sp                            // Set frame pointer
+iInWord:
+        .word   FALSE   // int iInWord = FALSE
 
-        stp     ULCARRY, ULSUM, [sp, #16]          // Save ulCarry and ulSum
-        stp     LINDEX, LSUMLENGTH, [sp, #32]      // Save lIndex and lSumLength
-        stp     OADDEND1, OADDEND2, [sp, #48]      // Save oAddend1 and oAddend2
-        stp     OSUM, x9, [sp, #64]                // Save oSum and an unused register (x9)
+//---------------------------------------------------------------------
+// bss section for uninitialized global variables
 
-        // Move parameters to callee-saved registers
-        mov     OADDEND1, x0                       // oAddend1 = x0
-        mov     OADDEND2, x1                       // oAddend2 = x1
-        mov     OSUM, x2                           // oSum = x2
+        .section .bss
 
-        // Inlined BigInt_larger logic to determine lSumLength
-        ldr     x0, [OADDEND1, LENGTH_OFFSET]       // load oAddend1->lLength
-        ldr     x1, [OADDEND2, LENGTH_OFFSET]       // load oAddend2->lLength
-        cmp     x0, x1
-        csel    x25, x0, x1, GT                    // lSumLength = (x0 > x1) ? x0 : x1
+iChar:
+        .skip   4       // int iChar
 
-        // Check if oSum->lLength <= lSumLength
-        ldr     x0, [OSUM, LENGTH_OFFSET]           // load oSum->lLength
-        cmp     x0, x25
-        ble     skip_clear_digits                   // if oSum->lLength <= lSumLength, skip memset
+//---------------------------------------------------------------------
+// text section for code
 
-        // Perform memset(oSum->aulDigits, 0, MAX_DIGITS_COUNT * sizeof(unsigned long))
-        add     x0, OSUM, DIGITS_OFFSET             // pointer to oSum->aulDigits
-        mov     w1, 0                               // value to set
-        mov     x2, MAX_DIGITS_COUNT               // number of digits
-        lsl     x2, x2, #3                          // size = MAX_DIGITS_COUNT * 8
-        bl      memset                              // call memset
+        .section .text
 
-    skip_clear_digits:
-        // Initialize ulCarry to 0
-        mov     ULCARRY, wzr
+        .equ    MAIN_STACK_BYTECOUNT, 16
 
-        // Initialize lIndex to 0
-        mov     LINDEX, wzr
+        .global main
 
-    addition_loop:
-        // Check if lIndex >= lSumLength
-        cmp     LINDEX, x25
-        bge     handle_carry                        // if lIndex >= lSumLength, handle carry
+//---------------------------------------------------------------------
+// int main(void)
+// writes to stdout counts of lines, words, and characters read from stdin.
+// returns 0.
+//
+// parameters:
+//     none
+//
+// return value:
+//     0 on successful execution.
+//---------------------------------------------------------------------
 
-        // Load oAddend1->aulDigits[lIndex]
-        ldr     x1, [OADDEND1, DIGITS_OFFSET]       // base address of oAddend1->aulDigits
-        ldr     x2, [x1, x24, LSL #3]               // load oAddend1->aulDigits[lIndex]
+main:
+        // prologue: adjust stack and save return address
+        sub     sp, sp, MAIN_STACK_BYTECOUNT
+        str     x30, [sp]
 
-        // Load oAddend2->aulDigits[lIndex]
-        ldr     x3, [OADDEND2, DIGITS_OFFSET]       // base address of oAddend2->aulDigits
-        ldr     x4, [x3, x24, LSL #3]               // load oAddend2->aulDigits[lIndex]
+        // start of the main loop
+loop_start:
+        // call getchar to read a character
+        bl      getchar
+        // store the character in w3 for later use
+        mov     w3, w0          // w3 = iChar
+        // save iChar to memory
+        adr     x1, iChar
+        str     w0, [x1]
+        // check if iChar == EOF
+        cmp     w0, EOF
+        beq     loop_end        // if end of file, exit loop
 
-        // Add the two digits with carry
-        add     x5, x2, x4                           // x5 = aulDigits1 + aulDigits2
-        adcs    x5, x5, wzr                          // x5 += carry, update carry flag
+        // increment lCharCount
+        adr     x1, lCharCount
+        ldr     x2, [x1]
+        add     x2, x2, 1
+        str     x2, [x1]
 
-        // Store the result into oSum->aulDigits[lIndex]
-        ldr     x6, [OSUM, DIGITS_OFFSET]           // base address of oSum->aulDigits
-        str     x5, [x6, x24, LSL #3]               // store the sum
+        // prepare to call isspace with iChar
+        mov     w0, w3          // w0 = iChar
+        bl      isspace
+        // if isspace(iChar) != 0, character is whitespace
+        cbnz    w0, is_space
+        // else, character is not whitespace
+        b       not_space
 
-        // Increment lIndex
-        add     LINDEX, LINDEX, #1
+is_space:
+        // check if we were in a word
+        adr     x1, iInWord
+        ldr     w2, [x1]
+        cbz     w2, check_newline   // if iInWord == FALSE, skip increment
 
-        // Loop back
-        b       addition_loop
+        // increment lWordCount
+        adr     x1, lWordCount
+        ldr     x2, [x1]
+        add     x2, x2, 1
+        str     x2, [x1]
 
-    handle_carry:
-        // Check if there was a carry from the last addition
-        cset    w9, cs                              // Set w9 to carry flag (cs = carry set)
+        // set iInWord to FALSE
+        adr     x1, iInWord    // Re-point x1 to iInWord
+        mov     w2, FALSE
+        str     w2, [x1]        // x1 now points to iInWord
 
-        cmp     w9, #0
-        beq     finalize_sum_length                  // If no carry, finalize
+        // proceed to check for newline
+        b       check_newline
 
-        // Check if lSumLength == MAX_DIGITS_COUNT
-        cmp     x25, MAX_DIGITS_COUNT
-        beq     overflow_detected                    // If equal, overflow occurred
+not_space:
+        // check if we are not already in a word
+        adr     x1, iInWord
+        ldr     w2, [x1]
+        cbnz    w2, check_newline   // if iInWord == TRUE, skip setting
 
-        // Set oSum->aulDigits[lSumLength] = 1
-        ldr     x0, [OSUM, DIGITS_OFFSET]           // base address of oSum->aulDigits
-        ldr     x1, =1
-        str     x1, [x0, x25, LSL #3]               // set the carry digit
+        // set iInWord to TRUE
+        mov     w2, TRUE
+        str     w2, [x1]        // x1 still points to iInWord
 
-        // Increment lSumLength
-        add     x25, x25, #1
+check_newline:
+        // check if iChar is a newline character
+        cmp     w3, '\n'
+        bne     loop_start      // if not newline, continue loop
 
-    finalize_sum_length:
-        // Set oSum->lLength = lSumLength
-        str     x25, [OSUM, LENGTH_OFFSET]          // store lSumLength into oSum->lLength
+        // increment lLineCount
+        adr     x1, lLineCount
+        ldr     x2, [x1]
+        add     x2, x2, 1
+        str     x2, [x1]
 
-        // Epilogue: restore stack frame and return
-        mov     w0, TRUE_VAL                        // return TRUE_VAL
-        ldp     ULCARRY, ULSUM, [sp, #16]            // restore ulCarry and ulSum
-        ldp     LINDEX, LSUMLENGTH, [sp, #32]        // restore lIndex and lSumLength
-        ldp     OADDEND1, OADDEND2, [sp, #48]        // restore oAddend1 and oAddend2
-        ldp     OSUM, x9, [sp, #64]                  // restore oSum and unused register
-        ldp     x29, x30, [sp, #0]                   // restore frame pointer and link register
-        add     sp, sp, ADDITION_STACK_SIZE          // deallocate stack frame
+        // loop back to start
+        b       loop_start
+
+loop_end:
+        // after loop ends, check if we are still in a word
+        adr     x1, iInWord
+        ldr     w2, [x1]
+        cbz     w2, print_counts    // if iInWord == FALSE, skip increment
+
+        // increment lWordCount one last time
+        adr     x1, lWordCount
+        ldr     x2, [x1]
+        add     x2, x2, 1
+        str     x2, [x1]
+
+        // set iInWord to FALSE (optional)
+        adr     x1, iInWord
+        mov     w2, FALSE
+        str     w2, [x1]
+
+print_counts:
+        // prepare arguments for printf
+        adr     x0, printfFormatStr     // x0 = format string
+        adr     x1, lLineCount
+        ldr     x1, [x1]                // x1 = lLineCount
+        adr     x2, lWordCount
+        ldr     x2, [x2]                // x2 = lWordCount
+        adr     x3, lCharCount
+        ldr     x3, [x3]                // x3 = lCharCount
+
+        // call printf to display counts
+        bl      printf
+
+        // set return value to 0
+        mov     w0, 0
+
+        // epilogue: restore return address and adjust stack
+        ldr     x30, [sp]
+        add     sp, sp, MAIN_STACK_BYTECOUNT
         ret
 
-    overflow_detected:
-        // Return FALSE_VAL due to overflow
-        mov     w0, FALSE_VAL
-        ldp     ULCARRY, ULSUM, [sp, #16]            // restore ulCarry and ulSum
-        ldp     LINDEX, LSUMLENGTH, [sp, #32]        // restore lIndex and lSumLength
-        ldp     OADDEND1, OADDEND2, [sp, #48]        // restore oAddend1 and oAddend2
-        ldp     OSUM, x9, [sp, #64]                  // restore oSum and unused register
-        ldp     x29, x30, [sp, #0]                   // restore frame pointer and link register
-        add     sp, sp, ADDITION_STACK_SIZE          // deallocate stack frame
-        ret
-
-    .size   BigInt_add, .-BigInt_add
+        .size   main, . - main
+        
