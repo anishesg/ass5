@@ -1,7 +1,4 @@
-//-----------------------------------------------------------------------
-// bigintaddoptopt.s
-// Author: Anish K 
-//-----------------------------------------------------------------------
+
 
 // Defining constants
 .equ    FALSE_VAL, 0
@@ -58,7 +55,7 @@ BigInt_add:
     // Check if oSum->lLength <= lSumLength
     ldr     x0, [x25, LENGTH_OFFSET]           // load oSum->lLength
     cmp     x0, x19
-    ble     .skip_clear_digits                  // if oSum->lLength <= lSumLength, skip memset
+    ble     .1                                  // if oSum->lLength <= lSumLength, skip memset
 
     // Perform memset(oSum->aulDigits, 0, MAX_DIGITS_COUNT * sizeof(unsigned long))
     add     x0, x25, DIGITS_OFFSET             // pointer to oSum->aulDigits
@@ -67,7 +64,7 @@ BigInt_add:
     lsl     x2, x2, #3                          // multiply by 8 (sizeof unsigned long)
     bl      memset                              // call memset
 
-.skip_clear_digits:
+.1:                                         // skip_clear_digits label
     // Initialize ulCarry to 0
     mov     x22, #0
 
@@ -77,7 +74,7 @@ BigInt_add:
 .addition_loop:
     // Check if lIndex >= lSumLength
     cmp     x20, x19
-    bge     .handle_carry                        // if lIndex >= lSumLength, handle carry
+    bge     .2                                  // if lIndex >= lSumLength, handle carry
 
     // Load oAddend1->aulDigits[lIndex]
     ldr     x0, [x23, DIGITS_OFFSET]           // base address of oAddend1->aulDigits
@@ -93,7 +90,7 @@ BigInt_add:
     adds    x4, x1, x3                           // x4 = x1 + x3, sets flags
     adcs    x4, x4, x22                          // x4 += ulCarry, sets carry
     // Store the carry
-    cset    w22, C                               // if carry set by adcs, set w22 to 1
+    cset    w22, CS                              // if carry set by adcs, set w22 to 1
 
     // Store the result into oSum->aulDigits[lIndex]
     ldr     x5, [x25, DIGITS_OFFSET]           // base address of oSum->aulDigits
@@ -106,47 +103,47 @@ BigInt_add:
     // Loop back
     b       .addition_loop
 
-.handle_carry:
+.2:                                         // handle_carry label
     // Check if ulCarry == 1
     cmp     x22, #1
-    bne     .finalize_sum_length                   // if ulCarry != 1, skip handling
+    bne     .3                                  // if ulCarry != 1, skip handling
 
     // Check if lSumLength == MAX_DIGITS_COUNT
     cmp     x19, MAX_DIGITS_COUNT
-    beq     .overflow_detected                       // If equal, overflow occurred
+    beq     .4                                  // If equal, overflow occurred
 
     // Set oSum->aulDigits[lSumLength] = 1
-    ldr     x0, [x25, DIGITS_OFFSET]               // base address of oSum->aulDigits
-    add     x0, x0, x19, LSL #3                      // address of oSum->aulDigits[lSumLength]
+    ldr     x0, [x25, DIGITS_OFFSET]           // base address of oSum->aulDigits
+    add     x0, x0, x19, LSL #3                 // address of oSum->aulDigits[lSumLength]
     mov     x1, #1
-    str     x1, [x0]                                 // set the carry digit
+    str     x1, [x0]                             // set the carry digit
 
     // Increment lSumLength
     add     x19, x19, #1
 
-.finalize_sum_length:
+.3:                                         // finalize_sum_length label
     // Set oSum->lLength = lSumLength
-    str     x19, [x25, LENGTH_OFFSET]              // store lSumLength into oSum->lLength
+    str     x19, [x25, LENGTH_OFFSET]          // store lSumLength into oSum->lLength
 
     // Epilogue: restore stack frame and return
-    mov     w0, TRUE_VAL                             // return TRUE_VAL
-    ldp     x19, x20, [sp, #16]                      // restore lSumLength and lIndex
-    ldp     x21, x22, [sp, #32]                      // restore ulSum and ulCarry
-    ldp     x23, x24, [sp, #48]                      // restore oAddend1 and oAddend2
-    ldp     x25, x26, [sp, #64]                      // restore oSum and unused register
-    ldp     x29, x30, [sp, #0]                       // restore frame pointer and link register
-    add     sp, sp, ADDITION_STACK_SIZE              // deallocate stack frame
+    mov     w0, TRUE_VAL                        // return TRUE_VAL
+    ldp     x19, x20, [sp, #16]                  // restore lSumLength and lIndex
+    ldp     x21, x22, [sp, #32]                  // restore ulSum and ulCarry
+    ldp     x23, x24, [sp, #48]                  // restore oAddend1 and oAddend2
+    ldp     x25, x26, [sp, #64]                  // restore oSum and unused register
+    ldp     x29, x30, [sp, #0]                   // restore frame pointer and link register
+    add     sp, sp, ADDITION_STACK_SIZE          // deallocate stack frame
     ret
 
-.overflow_detected:
+.4:                                         // overflow_detected label
     // Return FALSE_VAL due to overflow
     mov     w0, FALSE_VAL
-    ldp     x19, x20, [sp, #16]                      // restore lSumLength and lIndex
-    ldp     x21, x22, [sp, #32]                      // restore ulSum and ulCarry
-    ldp     x23, x24, [sp, #48]                      // restore oAddend1 and oAddend2
-    ldp     x25, x26, [sp, #64]                      // restore oSum and unused register
-    ldp     x29, x30, [sp, #0]                       // restore frame pointer and link register
-    add     sp, sp, ADDITION_STACK_SIZE              // deallocate stack frame
+    ldp     x19, x20, [sp, #16]                  // restore lSumLength and lIndex
+    ldp     x21, x22, [sp, #32]                  // restore ulSum and ulCarry
+    ldp     x23, x24, [sp, #48]                  // restore oAddend1 and oAddend2
+    ldp     x25, x26, [sp, #64]                  // restore oSum and unused register
+    ldp     x29, x30, [sp, #0]                   // restore frame pointer and link register
+    add     sp, sp, ADDITION_STACK_SIZE          // deallocate stack frame
     ret
 
 .size   BigInt_add, .-BigInt_add
