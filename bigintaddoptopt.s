@@ -99,24 +99,22 @@ Skip_Clear_Digits:
     // Initialize lIndex to 0
     mov     LINDEX, 0                            // lIndex = 0
 
-    // Initialize LSUMLENGTH if oSum->lLength was modified by memset
-    ldr     TEMP1, [OSUM, LENGTH_OFFSET]         // Reload oSum->lLength
-    mov     LSUMLENGTH, TEMP1                     // lSumLength = oSum->lLength
-
-    // Initialize the sum digits in oSum to 0 up to lSumLength if needed
-    // Not necessary here since we used memset if required
-
-    // Guarded Loop Pattern:
-    // Initialize loop counters and set up the loop to handle carry using adcs
-
 Loop_Start:
     // Compare lIndex with lSumLength
     cmp     LINDEX, LSUMLENGTH
     bge     Check_Carry_Out                      // If lIndex >= lSumLength, exit loop
 
     // Load digits from oAddend1 and oAddend2
-    ldr     x1, [OADDEND1, DIGITS_OFFSET + LINDEX, lsl #3] // x1 = oAddend1->aulDigits[lIndex]
-    ldr     x2, [OADDEND2, DIGITS_OFFSET + LINDEX, lsl #3] // x2 = oAddend2->aulDigits[lIndex]
+
+    // Calculate address for oAddend1->aulDigits[lIndex]
+    add     TEMP1, OADDEND1, DIGITS_OFFSET       // TEMP1 = OADDEND1 + DIGITS_OFFSET
+    add     TEMP1, TEMP1, LINDEX, lsl #3        // TEMP1 = TEMP1 + (LINDEX << 3)
+    ldr     x1, [TEMP1]                          // x1 = oAddend1->aulDigits[lIndex]
+
+    // Calculate address for oAddend2->aulDigits[lIndex]
+    add     TEMP2, OADDEND2, DIGITS_OFFSET       // TEMP2 = OADDEND2 + DIGITS_OFFSET
+    add     TEMP2, TEMP2, LINDEX, lsl #3        // TEMP2 = TEMP2 + (LINDEX << 3)
+    ldr     x2, [TEMP2]                          // x2 = oAddend2->aulDigits[lIndex]
 
     // Perform addition with carry
     add     x3, x1, x2                           // x3 = oAddend1->aulDigits[lIndex] + oAddend2->aulDigits[lIndex]
