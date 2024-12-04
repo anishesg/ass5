@@ -166,9 +166,8 @@ addition_loop:
     mov     ULCARRY, 0
 
     // ulSum += oAddend1->aulDigits[lIndex]
-    add     x1, OADDEND1, DIGITS_OFFSET         // pointer to oAddend1->aulDigits
-    add     x1, x1, LINDEX, lsl #3              // address of aulDigits[lIndex]
-    ldr     x2, [x1]                             // load digit from oAddend1
+    ldr     x1, [OADDEND1, DIGITS_OFFSET]       // pointer to oAddend1->aulDigits
+    ldr     x2, [x1, LINDEX, lsl #3]            // load oAddend1->aulDigits[lIndex]
     add     ULSUM, ULSUM, x2                     // ulSum += digit
 
     // Check for overflow: if (ulSum < oAddend1->aulDigits[lIndex]) ulCarry = 1
@@ -178,9 +177,8 @@ addition_loop:
 
 no_overflow_one:
     // ulSum += oAddend2->aulDigits[lIndex]
-    add     x1, OADDEND2, DIGITS_OFFSET         // pointer to oAddend2->aulDigits
-    add     x1, x1, LINDEX, lsl #3              // address of aulDigits[lIndex]
-    ldr     x2, [x1]                             // load digit from oAddend2
+    ldr     x1, [OADDEND2, DIGITS_OFFSET]       // pointer to oAddend2->aulDigits
+    ldr     x2, [x1, LINDEX, lsl #3]            // load oAddend2->aulDigits[lIndex]
     add     ULSUM, ULSUM, x2                     // ulSum += digit
 
     // Check for overflow: if (ulSum < oAddend2->aulDigits[lIndex]) ulCarry = 1
@@ -191,8 +189,7 @@ no_overflow_one:
 no_overflow_two:
     // Store ulSum into oSum->aulDigits[lIndex]
     add     x1, OSUM, DIGITS_OFFSET             // pointer to oSum->aulDigits
-    add     x1, x1, LINDEX, lsl #3              // address of aulDigits[lIndex]
-    str     ULSUM, [x1]                           // store ulSum
+    str     ULSUM, [x1, LINDEX, lsl #3]          // store ulSum
 
     // Increment lIndex
     add     LINDEX, LINDEX, 1
@@ -211,9 +208,10 @@ handle_carry:
 
     // Set oSum->aulDigits[lSumLength] = 1
     add     x0, OSUM, DIGITS_OFFSET             // pointer to oSum->aulDigits
-    add     x0, x0, LSUMLENGTH, lsl #3          // address of aulDigits[lSumLength]
+    str     wzr, [x0, LSUMLENGTH, lsl #3]        // set the carry digit to 1
+
     mov     x1, 1
-    str     x1, [x0]                             // set the carry digit
+    str     x1, [x0, LSUMLENGTH, lsl #3]        // set the carry digit to 1
 
     // Increment lSumLength
     add     LSUMLENGTH, LSUMLENGTH, 1
