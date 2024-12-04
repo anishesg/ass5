@@ -1,179 +1,210 @@
-//---------------------------------------------------------------------
-// mywc.s
-// author: anish k
-//---------------------------------------------------------------------
+//-----------------------------------------------------------------------
+// bigintaddoptopt.s
+// Author: anish k
+// Description: Further optimized ARMv8 assembly implementation of BigInt_add
+//              with inlined BigInt_larger function and guarded loop pattern.
+//-----------------------------------------------------------------------
 
-        .equ    FALSE, 0
-        .equ    TRUE, 1
-        .equ    EOF, -1
+// Defining constants
+.equ    FALSE_VAL, 0
+.equ    TRUE_VAL, 1
+.equ    MAX_DIGITS_COUNT, 32768
 
-//---------------------------------------------------------------------
-// read-only data section for format strings
+// Structure field offsets for BigInt_T
+.equ    LENGTH_OFFSET, 0          // offset of lLength in BigInt_T
+.equ    DIGITS_OFFSET, 8          // offset of aulDigits in BigInt_T
 
-        .section .rodata
+// Stack byte counts (should be multiples of 16 for alignment)
+.equ    ADDITION_STACK_SIZE, 64
 
-printfFormatStr:
-        .string "%7ld %7ld %7ld\n"
+// Local variable stack offsets for BigInt_add
+.equ    VAR_SUM_LENGTH, 8
+.equ    VAR_INDEX, 16
+.equ    VAR_SUM, 24
+.equ    VAR_CARRY, 32
 
-//---------------------------------------------------------------------
-// data section for initialized global variables
+// Parameter stack offsets for BigInt_add
+.equ    PARAM_SUM, 40
+.equ    PARAM_ADDEND2, 48
+.equ    PARAM_ADDEND1, 56
 
-        .section .data
+// Assign meaningful register names to variables
+ULCARRY         .req x22    // ulCarry
+ULSUM           .req x23    // ulSum
+LINDEX          .req x24    // lIndex
+LSUMLENGTH      .req x25    // lSumLength
 
-lLineCount:
-        .quad   0       // long lLineCount = 0
+OADDEND1        .req x26    // oAddend1
+OADDEND2        .req x27    // oAddend2
+OSUM            .req x28    // oSum
 
-lWordCount:
-        .quad   0       // long lWordCount = 0
+LLARGER         .req x19    // lLarger (inlined)
+LLENGTH1        .req x20    // lLength1 (inlined)
+LLENGTH2        .req x21    // lLength2 (inlined)
 
-lCharCount:
-        .quad   0       // long lCharCount = 0
+.global BigInt_add
 
-iInWord:
-        .word   FALSE   // int iInWord = FALSE
+.section .text
 
-//---------------------------------------------------------------------
-// bss section for uninitialized global variables
+//--------------------------------------------------------------
+// Assign the sum of oAddend1 and oAddend2 to oSum.
+// oSum should be distinct from oAddend1 and oAddend2.
+// Return 0 (FALSE_VAL) if an overflow occurred, and 1 (TRUE_VAL) otherwise.
+// int BigInt_add(BigInt_T oAddend1, BigInt_T oAddend2, BigInt_T oSum)
+// Parameters:
+//   x0: oAddend1
+//   x1: oAddend2
+//   x2: oSum
+// Returns:
+//   w0: TRUE_VAL (1) if successful, FALSE_VAL (0) if overflow occurred
+//--------------------------------------------------------------
 
-        .section .bss
+BigInt_add:
 
-iChar:
-        .skip   4       // int iChar
+    // Prologue: set up the stack frame
+    sub     sp, sp, ADDITION_STACK_SIZE
+    str     x30, [sp]                         // save link register
+    str     x22, [sp, VAR_CARRY]             // save ulCarry
+    str     x23, [sp, VAR_SUM]                // save ulSum
+    str     x24, [sp, VAR_INDEX]               // save lIndex
+    str     x25, [sp, VAR_SUM_LENGTH]         // save lSumLength
+    str     x26, [sp, PARAM_ADDEND1]          // save oAddend1
+    str     x27, [sp, PARAM_ADDEND2]          // save oAddend2
+    str     x28, [sp, PARAM_SUM]              // save oSum
 
-//---------------------------------------------------------------------
-// text section for code
+    // Move parameters to callee-saved registers
+    mov     OADDEND1, x0                       // oAddend1 = x0
+    mov     OADDEND2, x1                       // oAddend2 = x1
+    mov     OSUM, x2                           // oSum = x2
 
-        .section .text
+    // *** Inlined BigInt_larger Function ***
+    // Load lLength1 and lLength2
+    ldr     LLENGTH1, [OADDEND1, LENGTH_OFFSET] // load oAddend1->lLength into LLENGTH1
+    ldr     LLENGTH2, [OADDEND2, LENGTH_OFFSET] // load oAddend2->lLength into LLENGTH2
 
-        .equ    MAIN_STACK_BYTECOUNT, 16
+    // Compare lLength1 and lLength2
+    cmp     LLENGTH1, LLENGTH2
+    ble     select_length_two                  // if lLength1 <= lLength2, select lLength2
 
-        .global main
+    // Set lLarger to lLength1
+    mov     LLARGER, LLENGTH1
 
-//---------------------------------------------------------------------
-// int main(void)
-// writes to stdout counts of lines, words, and characters read from stdin.
-// returns 0.
-//
-// parameters:
-//     none
-//
-// return value:
-//     0 on successful execution.
-//---------------------------------------------------------------------
+    // Jump to conclude
+    b       conclude_larger
 
-main:
-        // prologue: adjust stack and save return address
-        sub     sp, sp, MAIN_STACK_BYTECOUNT
-        str     x30, [sp]
+select_length_two:
+    // Set lLarger to lLength2
+    mov     LLARGER, LLENGTH2
 
-        // start of the main loop
-loop_start:
-        // call getchar to read a character
-        bl      getchar
-        // store the character in w3 for later use
-        mov     w3, w0          // w3 = iChar
-        // save iChar to memory
-        adr     x1, iChar
-        str     w0, [x1]
-        // check if iChar == EOF
-        cmp     w0, EOF
-        beq     loop_end        // if end of file, exit loop
+conclude_larger:
+    // Set lSumLength to lLarger
+    mov     LSUMLENGTH, LLARGER
 
-        // increment lCharCount
-        adr     x1, lCharCount
-        ldr     x2, [x1]
-        add     x2, x2, 1
-        str     x2, [x1]
+    // *** End of Inlined BigInt_larger ***
 
-        // prepare to call isspace with iChar
-        mov     w0, w3          // w0 = iChar
-        bl      isspace
-        // if isspace(iChar) != 0, character is whitespace
-        cbnz    w0, is_space
-        // else, character is not whitespace
-        b       not_space
+    // Check if oSum->lLength <= lSumLength
+    ldr     x0, [OSUM, LENGTH_OFFSET]          // load oSum->lLength
+    cmp     x0, LSUMLENGTH
+    ble     skip_clear_digits                  // if oSum->lLength <= lSumLength, skip memset
 
-is_space:
-        // check if we were in a word
-        adr     x1, iInWord
-        ldr     w2, [x1]
-        cbz     w2, check_newline   // if iInWord == FALSE, skip increment
+    // Perform memset(oSum->aulDigits, 0, MAX_DIGITS_COUNT * sizeof(unsigned long))
+    add     x0, OSUM, DIGITS_OFFSET            // pointer to oSum->aulDigits
+    mov     w1, 0                              // value to set
+    mov     x2, MAX_DIGITS_COUNT              // size
+    lsl     x2, x2, #3                         // multiply by 8 (sizeof(unsigned long))
+    bl      memset                              // call memset
 
-        // increment lWordCount
-        adr     x1, lWordCount
-        ldr     x2, [x1]
-        add     x2, x2, 1
-        str     x2, [x1]
+skip_clear_digits:
+    // Initialize ulCarry to 0
+    mov     ULCARRY, 0
 
-        // set iInWord to FALSE
-        adr     x1, iInWord    // Re-point x1 to iInWord
-        mov     w2, FALSE
-        str     w2, [x1]        // x1 now points to iInWord
+    // Initialize lIndex to 0
+    mov     LINDEX, 0
 
-        // proceed to check for newline
-        b       check_newline
+// *** Implementing Guarded Loop Pattern ***
+addition_loop_guarded:
+    // Guarded Loop: Check if lIndex < lSumLength
+    cmp     LINDEX, LSUMLENGTH
+    bge     handle_carry                        // if lIndex >= lSumLength, handle carry
 
-not_space:
-        // check if we are not already in a word
-        adr     x1, iInWord
-        ldr     w2, [x1]
-        cbnz    w2, check_newline   // if iInWord == TRUE, skip setting
+sumLoop_guarded:
+    // ulSum = ulCarry
+    mov     ULSUM, ULCARRY
 
-        // set iInWord to TRUE
-        mov     w2, TRUE
-        str     w2, [x1]        // x1 still points to iInWord
+    // ulCarry = 0 (reset carry)
+    mov     ULCARRY, 0
 
-check_newline:
-        // check if iChar is a newline character
-        cmp     w3, '\n'
-        bne     loop_start      // if not newline, continue loop
+    // Load oAddend1->aulDigits[lIndex]
+    ldr     x1, [OADDEND1, DIGITS_OFFSET]       // pointer to oAddend1->aulDigits
+    add     x1, x1, LINDEX, lsl #3              // address of aulDigits[lIndex]
+    ldr     x2, [x1]                             // load digit from oAddend1
+    adds    ULSUM, ULSUM, x2                     // ulSum += digit and set flags
 
-        // increment lLineCount
-        adr     x1, lLineCount
-        ldr     x2, [x1]
-        add     x2, x2, 1
-        str     x2, [x1]
+    // Use adcs to add oAddend2->aulDigits[lIndex] with carry
+    ldr     x1, [OADDEND2, DIGITS_OFFSET]       // pointer to oAddend2->aulDigits
+    add     x1, x1, LINDEX, lsl #3              // address of aulDigits[lIndex]
+    ldr     x3, [x1]                             // load digit from oAddend2
+    adcs    ULSUM, ULSUM, x3                     // ulSum += digit + carry, update flags
 
-        // loop back to start
-        b       loop_start
+    // Store ulSum into oSum->aulDigits[lIndex]
+    add     x1, OSUM, DIGITS_OFFSET             // pointer to oSum->aulDigits
+    add     x1, x1, LINDEX, lsl #3              // address of aulDigits[lIndex]
+    str     ULSUM, [x1]                           // store ulSum
 
-loop_end:
-        // after loop ends, check if we are still in a word
-        adr     x1, iInWord
-        ldr     w2, [x1]
-        cbz     w2, print_counts    // if iInWord == FALSE, skip increment
+    // Increment lIndex
+    add     LINDEX, LINDEX, 1
 
-        // increment lWordCount one last time
-        adr     x1, lWordCount
-        ldr     x2, [x1]
-        add     x2, x2, 1
-        str     x2, [x1]
+    // Branch back to guarded loop
+    b       addition_loop_guarded
 
-        // set iInWord to FALSE (optional)
-        adr     x1, iInWord
-        mov     w2, FALSE
-        str     w2, [x1]
+// *** End of Guarded Loop Pattern ***
 
-print_counts:
-        // prepare arguments for printf
-        adr     x0, printfFormatStr     // x0 = format string
-        adr     x1, lLineCount
-        ldr     x1, [x1]                // x1 = lLineCount
-        adr     x2, lWordCount
-        ldr     x2, [x2]                // x2 = lWordCount
-        adr     x3, lCharCount
-        ldr     x3, [x3]                // x3 = lCharCount
+handle_carry:
+    // Check if carry flag is set
+    bcc     finalize_sum_length                  // if carry not set, skip handling
 
-        // call printf to display counts
-        bl      printf
+    // Check if lSumLength == MAX_DIGITS_COUNT
+    cmp     LSUMLENGTH, MAX_DIGITS_COUNT
+    beq     overflow_detected                    // if equal, overflow occurred
 
-        // set return value to 0
-        mov     w0, 0
+    // Set oSum->aulDigits[lSumLength] = 1
+    add     x0, OSUM, DIGITS_OFFSET             // pointer to oSum->aulDigits
+    add     x0, x0, LSUMLENGTH, lsl #3          // address of aulDigits[lSumLength]
+    mov     x1, 1
+    str     x1, [x0]                             // set the carry digit
 
-        // epilogue: restore return address and adjust stack
-        ldr     x30, [sp]
-        add     sp, sp, MAIN_STACK_BYTECOUNT
-        ret
+    // Increment lSumLength
+    add     LSUMLENGTH, LSUMLENGTH, 1
 
-        .size   main, . - main
-        
+finalize_sum_length:
+    // Set oSum->lLength = lSumLength
+    str     LSUMLENGTH, [OSUM, LENGTH_OFFSET]    // store lSumLength into oSum->lLength
+
+    // Return TRUE_VAL
+    mov     w0, TRUE_VAL
+    ldr     x30, [sp]                            // restore link register
+    ldr     x22, [sp, VAR_CARRY]                // restore ulCarry
+    ldr     x23, [sp, VAR_SUM]                   // restore ulSum
+    ldr     x24, [sp, VAR_INDEX]                 // restore lIndex
+    ldr     x25, [sp, VAR_SUM_LENGTH]           // restore lSumLength
+    ldr     x26, [sp, PARAM_ADDEND1]             // restore oAddend1
+    ldr     x27, [sp, PARAM_ADDEND2]             // restore oAddend2
+    ldr     x28, [sp, PARAM_SUM]                 // restore oSum
+    add     sp, sp, ADDITION_STACK_SIZE
+    ret
+
+overflow_detected:
+    // Return FALSE_VAL due to overflow
+    mov     w0, FALSE_VAL
+    ldr     x30, [sp]                            // restore link register
+    ldr     x22, [sp, VAR_CARRY]                // restore ulCarry
+    ldr     x23, [sp, VAR_SUM]                   // restore ulSum
+    ldr     x24, [sp, VAR_INDEX]                 // restore lIndex
+    ldr     x25, [sp, VAR_SUM_LENGTH]           // restore lSumLength
+    ldr     x26, [sp, PARAM_ADDEND1]             // restore oAddend1
+    ldr     x27, [sp, PARAM_ADDEND2]             // restore oAddend2
+    ldr     x28, [sp, PARAM_SUM]                 // restore oSum
+    add     sp, sp, ADDITION_STACK_SIZE
+    ret
+
+.size   BigInt_add, .-BigInt_add
