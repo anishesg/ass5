@@ -3,12 +3,12 @@ Assignment 5 readme File
 ------------------------------------------------------------------------
 Student 1: What is your name?
 
-
+anish kataria
 
 ------------------------------------------------------------------------
 Student 2: What is your name?
 
-
+n/a
 
 ------------------------------------------------------------------------
 Student 1: What authorized sources of information did you use to
@@ -40,7 +40,7 @@ nature of the interaction, may additionally require the interaction
 being reported to the Committee on Discipline. Write "None" if you used
 no unauthorized sources of information.
 
-
+None
 
 ------------------------------------------------------------------------
 Student 2: What unauthorized sources of information did you use to
@@ -63,7 +63,7 @@ guide, enter your name in the space below the following affirmation:
 
 This paper represents my own work in accordance with University
 regulations.
-
+Anish Kataria
 
 
 ------------------------------------------------------------------------
@@ -80,7 +80,9 @@ regulations.
 Student 1: What is your assessment of the assignment? Was it helpful?
 Was it fun?
 
-
+Interesting look at Assembly which did not feel incredibly taxing.
+Was fun to see the direct conversion of programs and to try 
+optimization with a goal in mind. 
 
 ------------------------------------------------------------------------
 Student 2: What is your assessment of the assignment? Was it helpful?
@@ -98,21 +100,92 @@ particular, what bugs are in your submission?
 ------------------------------------------------------------------------
 What is your mywc program test plan?
 
+All files are inspired by hip-hop lyrics.
 
+Boundary tests:
+
+mywc001.txt: an empty file. tests the program’s handling of no input,
+ensuring it reports zero lines, words, and characters.
+
+mywc002.txt: contains only whitespace characters (spaces, tabs,
+newlines). tests whether the program counts lines and characters
+correctly while reporting zero words.
+
+mywc003.txt: contains a single non-whitespace character. tests minimal
+input handling, ensuring the program counts one character and one word.
+
+mywc004.txt: contains a single word without any surrounding whitespace.
+tests if the program correctly identifies and counts a word without
+leading or trailing whitespace.
+
+mywc005.txt: a file that does not end with a newline character. tests
+the program’s ability to handle the last line and word correctly when
+the file lacks a terminating newline.
+
+Statement tests:
+
+mywc006.txt: contains multiple lines with words separated by spaces and
+newlines. this file causes the program to execute all main loops and
+conditions, specifically lines 15–35 in mywc.c, including character
+counting, word counting, line counting, and handling of both whitespace
+and non-whitespace characters.
+
+mywc007.txt: contains words separated by tabs and spaces. tests the
+handling of different whitespace characters as word separators. executes
+lines 18–22 and 25–29 in mywc.c, covering branches related to the
+isspace() function and word boundary detection.
+
+mywc008.txt: contains multiple consecutive whitespace characters
+between words. tests the program’s ability to handle multiple whitespace
+characters without counting extra words. executes lines 18–22 multiple
+times, ensuring that the condition for detecting the end of a word is
+correctly implemented.
+
+mywc009.txt: contains mixed whitespace and non-whitespace characters at
+various positions. tests all branches where the program decides whether
+to increment word counts or change the iInWord state. executes lines
+18–29, covering both transitions into and out of word states.
+
+mywc010.txt: contains words with punctuation and special characters.
+tests whether the program includes punctuation within words and counts
+them correctly. executes lines 16–29, ensuring that non-whitespace,
+non-space characters are treated as part of words.
+
+collectively, these statement test files cause the program to execute all
+lines of mywc.c, ensuring full coverage of loops, conditionals, and
+function calls.
+
+Stress tests:
+
+mywc011.txt: a large file with 1,000 lines of repeated text. stress
+tests the program’s performance and correctness when processing a large
+number of lines and words. ensures that loops and counters handle large
+values without errors.
+
+mywc012.txt: a large file with long lines totaling close to 50,000
+characters. tests the program’s ability to handle long lines and large
+character counts without overflow or performance degradation.
+
+mywc013.txt: a file containing 1,000 lines, each with 50 words. tests
+the program’s capacity limits by processing a maximum allowed size file,
+verifying that it can handle high word and line counts efficiently.
+
+
+note: only ascii characters used
 
 ------------------------------------------------------------------------
 What are the CPU times consumed by the programs from Parts 2a, 2b, 2d,
 2e, and 2f to compute fib(250000) on armlab? Fill in the blanks.
 
-Part 2a:  _____ seconds
+Part 2a:  CPU time:  11.947127 seconds
 
-Part 2b:  _____ seconds
+Part 2b:  CPU time:  2.626598 seconds
 
-Part 2d:  _____ seconds
+Part 2d:  CPU time:  8.987207 seconds
 
-Part 2e:  _____ seconds
+Part 2e:  CPU time:  3.607690 seconds
 
-Part 2f:  _____ seconds
+Part 2f:  2.33 seconds
 
 
 
