@@ -45,12 +45,12 @@ BigInt_add:
 
         // prologue: save stack space and registers
         sub     sp, sp, add_stack_bytes
-        str     x30, [sp]       // save x30
-        str     x19, [sp, 8]    // save x19
-        str     x20, [sp, 16]   // save x20
-        str     x21, [sp, 24]   // save x21
-        str     x22, [sp, 32]   // save x22
-        str     x23, [sp, 40]   // save x23
+        str     x30, [sp]
+        str     x19, [sp, 8]
+        str     x20, [sp, 16]
+        str     x21, [sp, 24]
+        str     x22, [sp, 32]
+        str     x23, [sp, 40]
 
         // move params to registers
         mov     oaddend1, x0
@@ -86,12 +86,12 @@ end_larger:
 
 end_clear:
 
+        // guarded loop check before initializing lindex
+        cmp     lindex, lsumlen
+        bge     end_add              // skip if index >= sumlen
+
         // initialize index
         mov     lindex, 0
-
-        // guarded loop for addition
-        cmp     lindex, lsumlen
-        bge     end_add
 
 loop_add:
         add     x0, oaddend1, digits_offset
@@ -103,13 +103,14 @@ loop_add:
         str     x1, [x0, lindex, lsl 3]
 
         add     lindex, lindex, 1
-        cmp     lindex, lsumlen
-        blt     loop_add             // continue if index < sumlen
+        sub     x0, lsumlen, lindex
+        cbnz    x0, loop_add         // continue if index < sumlen
 
 end_add:
-        // check for carry out
+        // check for carry first
         bcc     end_carry            // skip if no carry
 
+        // now check for overflow
         cmp     lsumlen, max_digits
         bne     end_max
 
@@ -130,7 +131,7 @@ end_carry:
         mov     w0, true
 
 cleanup:
-        // epilogue: restore stack and registers
+        // epilogue: restore stack in reverse order
         ldr     x23, [sp, 40]
         ldr     x22, [sp, 32]
         ldr     x21, [sp, 24]
