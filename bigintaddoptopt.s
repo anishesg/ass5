@@ -45,9 +45,12 @@ BigInt_add:
 
         // prologue: save stack space and registers
         sub     sp, sp, add_stack_bytes
-        stp     x30, x19, [sp]       // save x30 and x19 together
-        stp     x20, x21, [sp, 16]   // save x20 and x21 together
-        stp     x22, x23, [sp, 32]   // save x22 and x23 together
+        str     x30, [sp]       // save x30
+        str     x19, [sp, 8]    // save x19
+        str     x20, [sp, 16]   // save x20
+        str     x21, [sp, 24]   // save x21
+        str     x22, [sp, 32]   // save x22
+        str     x23, [sp, 40]   // save x23
 
         // move params to registers
         mov     oaddend1, x0
@@ -83,10 +86,12 @@ end_larger:
 
 end_clear:
 
+        // initialize index
+        mov     lindex, 0
+
         // guarded loop for addition
-        cmp     lindex, lsumlen      // check before initializing lindex
+        cmp     lindex, lsumlen
         bge     end_add
-        mov     lindex, 0            // Initialize lindex here
 
 loop_add:
         add     x0, oaddend1, digits_offset
@@ -98,8 +103,8 @@ loop_add:
         str     x1, [x0, lindex, lsl 3]
 
         add     lindex, lindex, 1
-        sub     x0, lsumlen, lindex
-        cbnz    x0, loop_add         // continue if index < sumlen
+        cmp     lindex, lsumlen
+        blt     loop_add             // continue if index < sumlen
 
 end_add:
         // check for carry out
@@ -125,10 +130,13 @@ end_carry:
         mov     w0, true
 
 cleanup:
-        // epilogue: restore stack and registers in reverse order
-        ldp     x22, x23, [sp, 32]   // restore x22 and x23
-        ldp     x20, x21, [sp, 16]   // restore x20 and x21
-        ldp     x30, x19, [sp]       // restore x30 and x19
+        // epilogue: restore stack and registers
+        ldr     x23, [sp, 40]
+        ldr     x22, [sp, 32]
+        ldr     x21, [sp, 24]
+        ldr     x20, [sp, 16]
+        ldr     x19, [sp, 8]
+        ldr     x30, [sp]
         add     sp, sp, add_stack_bytes
         ret
 .size   BigInt_add, (. -BigInt_add)
