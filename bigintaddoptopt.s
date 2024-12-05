@@ -76,7 +76,7 @@ skip_memset:
         add     x26, x21, #AULDIGITS_OFFSET   /* x26 = oSum->aulDigits */
 
         /* Clear carry flag before addition */
-        adds    xzr, xzr, #0                  /* Clear carry flag */
+        subs    x9, xzr, xzr                  /* Clear carry flag; x9 is a scratch register */
 
         /*----------------------------------------------------------------*/
         /* Guarded loop for addition */
