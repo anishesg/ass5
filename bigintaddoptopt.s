@@ -1,154 +1,145 @@
 
-// Defining constants
-.equ    FALSE_VAL, 0
-.equ    TRUE_VAL, 1
-.equ    MAX_DIGITS_COUNT, 32768
+/* Optimized ARMv8 assembly implementation of BigInt_add function.
+   Implements the following optimizations:
+   - Inlines the BigInt_larger function.
+   - Uses callee-saved registers for parameters and local variables.
+   - Uses the adcs instruction to handle carries efficiently.
+   - Employs the guarded loop pattern for the addition loop.
+*/
 
-// Structure field offsets for BigInt_T
-.equ    LENGTH_OFFSET, 0          // offset of lLength in BigInt_T
-.equ    DIGITS_OFFSET, 8          // offset of aulDigits in BigInt_T
+        .section .text
+        .global BigInt_add
 
-// Stack byte counts (should be multiples of 16 for alignment)
-.equ    ADDITION_STACK_SIZE, 48  // Reduced stack size after optimizations
+/* Define constants */
+        .equ    FALSE, 0
+        .equ    TRUE, 1
+        .equ    MAX_DIGITS, 32768
+        .equ    LLENGTH_OFFSET, 0          /* Offset of lLength in BigInt_T */
+        .equ    AULDIGITS_OFFSET, 8        /* Offset of aulDigits in BigInt_T */
+        .equ    STACK_FRAME_SIZE, 64       /* Must be multiple of 16 */
 
-// Assign meaningful register names to variables using .req directives
-ULSUM           .req x23    // ulSum
-LINDEX          .req x24    // lIndex
-LSUMLENGTH      .req x25    // lSumLength
-
-OADDEND1        .req x26    // oAddend1
-OADDEND2        .req x27    // oAddend2
-OSUM            .req x28    // oSum
-
-// Remove LLARGER, LLENGTH1, LLENGTH2 as they are inlined
-
-.global BigInt_add
-
-.section .text
-
-//--------------------------------------------------------------
-// Assign the sum of oAddend1 and oAddend2 to oSum.
-// oSum should be distinct from oAddend1 and oAddend2.
-// Return 0 (FALSE_VAL) if an overflow occurred, and 1 (TRUE_VAL) otherwise.
-// int BigInt_add(BigInt_T oAddend1, BigInt_T oAddend2, BigInt_T oSum)
-// Parameters:
-//   x0: oAddend1
-//   x1: oAddend2
-//   x2: oSum
-// Returns:
-//   w0: TRUE_VAL (1) if successful, FALSE_VAL (0) if overflow occurred
-//--------------------------------------------------------------
-
+/* BigInt_add function
+   int BigInt_add(BigInt_T oAddend1, BigInt_T oAddend2, BigInt_T oSum);
+*/
 BigInt_add:
+        /* Prologue */
+        sub     sp, sp, STACK_FRAME_SIZE
 
-    // Prologue: set up the stack frame
-    sub     sp, sp, ADDITION_STACK_SIZE
-    stp     x29, x30, [sp, #-16]!            // Save frame pointer and link register
-    mov     x29, sp                          // Set frame pointer
+        /* Save callee-saved registers and return address */
+        stp     x29, x30, [sp, #56]        /* Save frame pointer and LR */
+        stp     x25, x26, [sp, #40]
+        stp     x23, x24, [sp, #24]
+        stp     x21, x22, [sp, #8]
+        stp     x19, x20, [sp]             /* Save x19 and x20 */
 
-    // Move parameters to callee-saved registers
-    mov     OADDEND1, x0                      // oAddend1 = x0
-    mov     OADDEND2, x1                      // oAddend2 = x1
-    mov     OSUM, x2                          // oSum = x2
+        /* Move parameters into callee-saved registers */
+        mov     x19, x0            /* oAddend1 */
+        mov     x20, x1            /* oAddend2 */
+        mov     x21, x2            /* oSum */
 
-    // Determine the larger length: lSumLength = max(oAddend1->lLength, oAddend2->lLength)
-    ldr     x19, [OADDEND1, LENGTH_OFFSET]     // load oAddend1->lLength into x19
-    ldr     x20, [OADDEND2, LENGTH_OFFSET]     // load oAddend2->lLength into x20
-    cmp     x19, x20                          // compare lLength1 and lLength2
-    bgt     set_lsumlength1                    // if lLength1 > lLength2, set lSumLength = lLength1
-    mov     LSUMLENGTH, x20                    // else, lSumLength = lLength2
-    b       after_lsumlength
+        /*----------------------------------------------------------------*/
+        /* Inline BigInt_larger: lSumLength = max(oAddend1->lLength, oAddend2->lLength); */
 
-set_lsumlength1:
-    mov     LSUMLENGTH, x19                    // lSumLength = lLength1
+        /* Load oAddend1->lLength and oAddend2->lLength */
+        ldr     x0, [x19, #LLENGTH_OFFSET]    /* x0 = oAddend1->lLength */
+        ldr     x1, [x20, #LLENGTH_OFFSET]    /* x1 = oAddend2->lLength */
 
-after_lsumlength:
+        /* Compute lSumLength = max(x0, x1) */
+        cmp     x0, x1
+        csel    x22, x0, x1, gt               /* x22 = x0 if x0 > x1, else x1 */
+        /* x22 now holds lSumLength */
 
-    // Check if oSum->lLength <= lSumLength
-    ldr     x21, [OSUM, LENGTH_OFFSET]         // load oSum->lLength into x21
-    cmp     x21, LSUMLENGTH
-    ble     skip_clear_digits                   // if oSum->lLength <= lSumLength, skip memset
+        /*----------------------------------------------------------------*/
+        /* Clear oSum's array if necessary */
+        /* if (oSum->lLength <= lSumLength) { memset(oSum->aulDigits, 0, MAX_DIGITS * sizeof(unsigned long)); } */
 
-    // Perform memset(oSum->aulDigits, 0, MAX_DIGITS_COUNT * sizeof(unsigned long))
-    add     x0, OSUM, DIGITS_OFFSET            // pointer to oSum->aulDigits
-    mov     w1, 0                              // value to set
-    mov     x2, MAX_DIGITS_COUNT               // size
-    lsl     x2, x2, #3                         // multiply by 8 (sizeof(unsigned long))
-    bl      memset                              // call memset
+        ldr     x3, [x21, #LLENGTH_OFFSET]    /* x3 = oSum->lLength */
+        cmp     x3, x22
+        bgt     skip_memset                   /* Skip memset if oSum->lLength > lSumLength */
 
-skip_clear_digits:
+        /* Prepare arguments for memset */
+        add     x0, x21, #AULDIGITS_OFFSET    /* x0 = oSum->aulDigits */
+        mov     x1, #0                        /* x1 = value to set (0) */
+        mov     x2, #MAX_DIGITS
+        lsl     x2, x2, #3                    /* x2 = MAX_DIGITS * 8 (size in bytes) */
 
-    // Initialize lIndex to 0
-    mov     LINDEX, 0
+        bl      memset                        /* Call memset */
 
-    // Initialize carry flag to zero (C flag cleared)
-    clrex                                     // Clear exclusive monitors and reset flags
-    orr     xzr, xzr, xzr                      // Ensure carry flag is cleared
+skip_memset:
+        /*----------------------------------------------------------------*/
+        /* Initialize lIndex = 0 */
+        mov     x23, #0                       /* lIndex = 0 */
 
-sumLoop:
-    // Guarded loop condition: if (lIndex >= lSumLength) exit loop
-    cmp     LINDEX, LSUMLENGTH
-    bge     handle_carry                       // if lIndex >= lSumLength, handle carry
+        /* Prepare base addresses for aulDigits arrays */
+        add     x24, x19, #AULDIGITS_OFFSET   /* x24 = oAddend1->aulDigits */
+        add     x25, x20, #AULDIGITS_OFFSET   /* x25 = oAddend2->aulDigits */
+        add     x26, x21, #AULDIGITS_OFFSET   /* x26 = oSum->aulDigits */
 
-    // Load oAddend1->aulDigits[lIndex]
-    add     x29, OADDEND1, DIGITS_OFFSET        // x29 = OADDEND1 + DIGITS_OFFSET
-    add     x29, x29, LINDEX, lsl #3            // x29 += LINDEX << 3
-    ldr     x0, [x29]                            // x0 = oAddend1->aulDigits[lIndex]
+        /* Clear carry flag before addition */
+        adds    xzr, xzr, #0                  /* Clear carry flag */
 
-    // Add oAddend1->aulDigits[lIndex] to ulSum with carry
-    adcs    ULSUM, ULSUM, x0                      // ulSum = ulSum + oAddend1->aulDigits[lIndex] + carry
+        /*----------------------------------------------------------------*/
+        /* Guarded loop for addition */
+        cmp     x23, x22                      /* Compare lIndex with lSumLength */
+        bge     end_add_loop                  /* If lIndex >= lSumLength, skip loop */
 
-    // Load oAddend2->aulDigits[lIndex]
-    add     x30, OADDEND2, DIGITS_OFFSET        // x30 = OADDEND2 + DIGITS_OFFSET
-    add     x30, x30, LINDEX, lsl #3            // x30 += LINDEX << 3
-    ldr     x1, [x30]                            // x1 = oAddend2->aulDigits[lIndex]
+add_loop:
+        /* Load digits from oAddend1 and oAddend2 */
+        ldr     x0, [x24, x23, LSL #3]        /* x0 = oAddend1->aulDigits[lIndex] */
+        ldr     x1, [x25, x23, LSL #3]        /* x1 = oAddend2->aulDigits[lIndex] */
 
-    // Add oAddend2->aulDigits[lIndex] to ulSum with carry
-    adcs    ULSUM, ULSUM, x1                      // ulSum = ulSum + oAddend2->aulDigits[lIndex] + carry
+        /* Add digits with carry */
+        adcs    x0, x0, x1                    /* x0 = x0 + x1 + C */
+        /* Store result in oSum */
+        str     x0, [x26, x23, LSL #3]        /* oSum->aulDigits[lIndex] = x0 */
 
-    // Store ulSum into oSum->aulDigits[lIndex]
-    add     x31, OSUM, DIGITS_OFFSET            // x31 = OSUM + DIGITS_OFFSET
-    add     x31, x31, LINDEX, lsl #3            // x31 += LINDEX << 3
-    str     x23, [x31]                             // oSum->aulDigits[lIndex] = ulSum
+        /* Increment lIndex */
+        add     x23, x23, #1                  /* lIndex++ */
 
-    // Increment lIndex
-    add     LINDEX, LINDEX, 1
+        /* Loop condition */
+        cmp     x23, x22
+        blt     add_loop
 
-    // Repeat the loop
-    b       sumLoop
+end_add_loop:
+        /*----------------------------------------------------------------*/
+        /* Check for carry out of the last addition */
+        bcs     handle_carry                  /* If carry flag set, handle carry */
+        b       set_length                    /* Else, proceed to set length */
 
 handle_carry:
-    // Check if carry flag is set
-    bcc     finalize_sum_length                 // if carry flag is not set, skip handling
+        /* Check if lSumLength == MAX_DIGITS */
+        cmp     x22, #MAX_DIGITS
+        beq     return_false                  /* If lSumLength == MAX_DIGITS, return FALSE */
 
-    // Check if lSumLength == MAX_DIGITS_COUNT
-    cmp     LSUMLENGTH, MAX_DIGITS_COUNT
-    beq     overflow_detected                   // if equal, overflow occurred
+        /* Set oSum->aulDigits[lSumLength] = 1 */
+        mov     x0, #1
+        str     x0, [x26, x22, LSL #3]        /* oSum->aulDigits[lSumLength] = 1 */
 
-    // Set oSum->aulDigits[lSumLength] = 1
-    add     x0, OSUM, DIGITS_OFFSET            // pointer to oSum->aulDigits
-    add     x0, x0, LSUMLENGTH, lsl #3         // address of oSum->aulDigits[lSumLength]
-    mov     x1, 1
-    str     x1, [x0]                             // set the carry digit
+        /* Increment lSumLength */
+        add     x22, x22, #1                  /* lSumLength++ */
 
-    // Increment lSumLength
-    add     LSUMLENGTH, LSUMLENGTH, 1
+        b       set_length
 
-finalize_sum_length:
-    // Set oSum->lLength = lSumLength
-    str     LSUMLENGTH, [OSUM, LENGTH_OFFSET]   // store lSumLength into oSum->lLength
+return_false:
+        mov     w0, #FALSE                     /* Return value FALSE */
+        b       epilogue
 
-    // Epilogue: restore stack frame and return
-    mov     w0, TRUE_VAL                        // return TRUE_VAL
-    ldp     x29, x30, [sp], #16                  // Restore frame pointer and link register
-    add     sp, sp, ADDITION_STACK_SIZE
-    ret
+set_length:
+        /* Set oSum->lLength = lSumLength */
+        str     x22, [x21, #LLENGTH_OFFSET]   /* oSum->lLength = lSumLength */
 
-overflow_detected:
-    // Return FALSE_VAL due to overflow
-    mov     w0, FALSE_VAL                       // return FALSE_VAL
-    ldp     x29, x30, [sp], #16                  // Restore frame pointer and link register
-    add     sp, sp, ADDITION_STACK_SIZE
-    ret
+        /* Return TRUE */
+        mov     w0, #TRUE
 
-.size   BigInt_add, .-BigInt_add
+        /*----------------------------------------------------------------*/
+epilogue:
+        /* Epilogue: Restore callee-saved registers and return */
+        ldp     x19, x20, [sp]                /* Restore x19 and x20 */
+        ldp     x21, x22, [sp, #8]            /* Restore x21 and x22 */
+        ldp     x23, x24, [sp, #24]           /* Restore x23 and x24 */
+        ldp     x25, x26, [sp, #40]           /* Restore x25 and x26 */
+        ldp     x29, x30, [sp, #56]           /* Restore frame pointer and LR */
+        add     sp, sp, STACK_FRAME_SIZE      /* Deallocate stack frame */
+        ret                                   /* Return to caller */
+
+/*--------------------------------------------------------------------*/
