@@ -1,4 +1,3 @@
-// enums for clarity
         .equ    false, 0
         .equ    true, 1
         .equ    eof, -1
@@ -20,30 +19,21 @@
         .section .text
         
         //--------------------------------------------------------------
-        // add two big integers (oaddend1 and oaddend2), store in osum
-        // return false (0) if overflow, true (1) otherwise
-        //--------------------------------------------------------------
-
-        // stack space for locals (multiple of 16 for alignment)
         .equ    add_stack_bytes, 48
 
-        // local vars in registers
         lsumlen      .req x23
         lindex       .req x22
 
-        // params in registers
         osum         .req x21
         oaddend2     .req x20
         oaddend1     .req x19
 
-        // offsets in the structure
         .equ    digits_offset,  8
         
         .global BigInt_add
 
 BigInt_add:
 
-        // prologue: save stack space and registers
         sub     sp, sp, add_stack_bytes
         str     x30, [sp]
         str     x19, [sp, 8]
@@ -52,92 +42,74 @@ BigInt_add:
         str     x22, [sp, 32]
         str     x23, [sp, 40]
 
-        // move params to registers
         mov     oaddend1, x0
         mov     oaddend2, x1
         mov     osum, x2
 
-        // local vars
-        // unsigned long sum; long index, sumlen;
-
-        // figure out the bigger length
-        // inline BigInt_larger
-        ldr     x0, [oaddend1]       // length of oaddend1
-        ldr     x1, [oaddend2]       // length of oaddend2
+        ldr     x0, [oaddend1]
+        ldr     x1, [oaddend2]
         cmp     x0, x1
-        ble     else_less            // if oaddend1 <= oaddend2
-        mov     lsumlen, x0          // sumlen = length of oaddend1
+        bgt     else_less
+        mov     lsumlen, x0
         b       end_larger
 else_less:
-        mov     lsumlen, x1          // sumlen = length of oaddend2
+        mov     lsumlen, x1
 end_larger:
 
-        // clear osum array if needed
         ldr     x0, [osum]
         cmp     x0, lsumlen
         ble     end_clear
 
-        // clear memory (memset)
         add     x0, osum, digits_offset
-        mov     w1, 0
+        movk    x1, #0
         mov     x2, max_digits
-        lsl     x2, x2, 3            // max_digits * 8
+        lsl     x2, x2, 3
         bl      memset
 
 end_clear:
 
-        // guarded loop check before initializing lindex
+        mov     lindex, xzr
+
         cmp     lindex, lsumlen
-        bge     end_add              // skip if index >= sumlen
-
-        // initialize index
-        mov     lindex, 0
-
+        bge     end_add
 loop_add:
-        add     x0, oaddend1, digits_offset
-        ldr     x0, [x0, lindex, lsl 3]
-        add     x1, oaddend2, digits_offset
-        ldr     x1, [x1, lindex, lsl 3]
-        adcs    x1, x0, x1           // add with carry
+        ldr     x0, [oaddend1, digits_offset, lsl 0]
+        ldr     x1, [oaddend2, digits_offset, lsl 0]
+        adcs    x1, x0, x1
         add     x0, osum, digits_offset
         str     x1, [x0, lindex, lsl 3]
 
         add     lindex, lindex, 1
-        sub     x0, lsumlen, lindex
-        cbnz    x0, loop_add         // continue if index < sumlen
+        cmp     lindex, lsumlen
+        blt     loop_add
 
 end_add:
-        // check for carry first
-        bcc     end_carry            // skip if no carry
+        bcc     end_carry
 
-        // now check for overflow
         cmp     lsumlen, max_digits
-        bne     end_max
+        bgt     end_max_check
 
-        // return false if overflow
         mov     w0, false
         b       cleanup
 
-end_max:
+end_max_check:
         add     x0, osum, digits_offset
         mov     x2, 1
         str     x2, [x0, lsumlen, lsl 3]
         add     lsumlen, lsumlen, 1
 
 end_carry:
-        str     lsumlen, [osum]      // set length in osum
+        str     lsumlen, [osum]
 
-        // return true
         mov     w0, true
 
 cleanup:
-        // epilogue: restore stack in reverse order
-        ldr     x23, [sp, 40]
-        ldr     x22, [sp, 32]
-        ldr     x21, [sp, 24]
-        ldr     x20, [sp, 16]
-        ldr     x19, [sp, 8]
-        ldr     x30, [sp]
         add     sp, sp, add_stack_bytes
+        ldr     x30, [sp]
+        ldr     x19, [sp, 8]
+        ldr     x20, [sp, 16]
+        ldr     x21, [sp, 24]
+        ldr     x22, [sp, 32]
+        ldr     x23, [sp, 40]
         ret
 .size   BigInt_add, (. -BigInt_add)
