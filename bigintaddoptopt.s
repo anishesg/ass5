@@ -1,8 +1,9 @@
-// making some constants
-        .equ    false, 0
-        .equ    true, 1
-        .equ    eof, -1
-        .equ    max_digits, 32768
+
+// making the enums 
+        .equ    FALSE, 0
+        .equ    TRUE, 1
+        .equ    EOF, -1
+        .equ    MAX_DIGITS, 32768
 //----------------------------------------------------------------------
         
         .section .rodata
@@ -20,34 +21,35 @@
         .section .text
         
         //--------------------------------------------------------------
-        // Add addend1 and addend2, store the result in sum.
-        // Sum should be different from addend1 and addend2.
-        // Return 0 (false) if an overflow occurred,
-        // and 1 (true) otherwise.
-        // int BigInt_add(BigInt_T addend1, BigInt_T addend2, BigInt_T sum)
+        // Assign the sum of oAddend1 and oAddend2 to oSum.  
+        // oSum should be distinct from oAddend1 and oAddend2.  
+        // Return 0 (FALSE) if an overflow occurred, 
+        // and 1 (TRUE) otherwise. 
+        // int BigInt_add(BigInt_T oAddend1, BigInt_T oAddend2, 
+        // BigInt_T oSum)
         //--------------------------------------------------------------
 
         // Must be a multiple of 16
-        .equ    stack_bytecount, 48
+        .equ    ADD_STACK_BYTECOUNT, 48
 
-        // Local variable registers
-        sum_length      .req x23
-        index           .req x22
+        // local variable registers
+        LSUMLENGTH      .req x23
+        LINDEX          .req x22
 
-        // Parameter registers
-        sum_reg         .req x21
-        addend2_reg     .req x20
-        addend1_reg     .req x19
+        // parameter registers
+        OSUM            .req x21
+        OADDEND2        .req x20
+        OADDEND1        .req x19
 
-        // Structure field offsets
-        .equ    digits_offset, 8
+        // structure field offsets
+        .equ    AULDIGITS,  8
         
         .global BigInt_add
 
 BigInt_add:
 
-        // Prologue: save registers on the stack
-        sub     sp, sp, stack_bytecount
+        // Prolog
+        sub     sp, sp, ADD_STACK_BYTECOUNT
         str     x30, [sp]
         str     x19, [sp, 8]
         str     x20, [sp, 16]
@@ -55,109 +57,119 @@ BigInt_add:
         str     x22, [sp, 32]
         str     x23, [sp, 40]
 
-        // Move parameters into our registers
-        mov     addend1_reg, x0
-        mov     addend2_reg, x1
-        mov     sum_reg, x2
+        // store parameters in registers
+        mov     OADDEND1, x0
+        mov     OADDEND2, x1
+        mov     OSUM, x2
 
-        // Determine the larger length (inlined BigInt_larger)
-        ldr     x0, [addend1_reg]
-        ldr     x1, [addend2_reg]
+        // unsigned long ulSum;
+        // long lIndex;
+        // long lSumLength;
+        
+        // Determine the larger length. Inline of BigInt_larger
+        //  if (oAddend1->lLength <= oAddend2->lLength) goto elseIfLess;
+        ldr     x0, [OADDEND1]
+        ldr     x1, [OADDEND2]
         cmp     x0, x1
-        ble     else_if_less
-        // sum_length = addend1->lLength;
-        mov     sum_length, x0
-        b       end_if_greater
-else_if_less:
-        // sum_length = addend2->lLength;
-        mov     sum_length, x1
-end_if_greater:
-        // Clear sum's array if necessary
+        ble     elseIfLess
+        //  lSumLength = oAddend1->lLength;
+        mov     LSUMLENGTH, x0
+        //  goto endIfGreater;
+        b       endIfGreater
+elseIfLess:
+        //  lSumLength = oAddend2->lLength;
+        mov     LSUMLENGTH,  x1
+        //  goto endIfGreater;
+endIfGreater:
+        // Clear oSum's array if necessary.
 
-        // if (sum->lLength <= sum_length) goto end_if_length;
-        ldr     x0, [sum_reg]
-        cmp     x0, sum_length
-        ble     end_if_length
+        // if (oSum->lLength <= lSumLength) goto endIfLength;
+        ldr     x0, [OSUM]
+        cmp     x0, LSUMLENGTH
+        ble     endIfLength
 
-        // memset(sum->digits, 0, max_digits * sizeof(unsigned long));
-        add     x0, sum_reg, digits_offset
+    // memset(oSum->aulDigits, 0, MAX_DIGITS * sizeof(unsigned long));
+        add     x0, OSUM, AULDIGITS
         mov     w1, 0
-        mov     x2, max_digits
-        lsl     x2, x2, 3      // x2 = max_digits * 8
+        mov     x2, MAX_DIGITS
+        lsl     x2, x2, 3
         bl      memset
     
-end_if_length:
+endIfLength:
 
-        // index = 0;
-        mov     index, 0
+        // lIndex = 0;
+        mov     LINDEX, 0
         
 // Perform the addition.
 
-sum_loop:
-        // Guarded loop: if index >= sum_length, exit loop
-        cmp     index, sum_length
-        bge     end_if_carry
-
-        // sum->digits[index] = addend1->digits[index] + addend2->digits[index] + carry
-        add     x0, addend1_reg, digits_offset
-        ldr     x0, [x0, index, lsl #3]
-        add     x1, addend2_reg, digits_offset
-        ldr     x1, [x1, index, lsl #3]
-        // Add with carry
+        // guarded loop, skip directly to endIfCarry, bc no carry bit
+        // if (lIndex >= lSumLength) goto endIfCarry;
+        cmp     LINDEX, LSUMLENGTH
+        bge     endIfCarry
+sumLoop:
+        // oSum->aulDigits[lIndex] = oAddend1->aulDigits[lIndex] + 
+        // oAddend2->aulDigits[lIndex] 
+        add     x0, OADDEND1, AULDIGITS
+        ldr     x0, [x0, LINDEX, lsl 3]
+        add     x1, OADDEND2, AULDIGITS
+        ldr     x1, [x1, LINDEX, lsl 3]
+        // add with carry bit
         adcs    x1, x0, x1
-        // Store result in sum
-        add     x0, sum_reg, digits_offset
-        str     x1, [x0, index, lsl #3]
+        // save to oSum
+        add     x0, OSUM, AULDIGITS
+        str     x1, [x0, LINDEX, lsl 3]
         
-        // index++;
-        add     index, index, 1
+        // lIndex++;
+        add     LINDEX, LINDEX, 1
 
-        // Loop back to continue addition
-        b       sum_loop
+        // perform compare without triggering C flag
+        // if (lIndex < lSumLength) goto sumLoop;
+        sub    x0, LSUMLENGTH, LINDEX
+        CBNZ   x0, sumLoop
 
-end_if_carry:
-        // Check for a carry out of the last addition
+endSumLoop:
+        // Check for a carry out of the last "column" of the addition.
 
-        // If no carry occurred, skip to setting sum length
-        bcc     end_sum
+        // if (C == 0) goto endIfCarry;
+        bcc     endIfCarry
 
-        // If sum_length == max_digits, overflow occurred
-        cmp     sum_length, max_digits
-        bne     not_max
+        // if (lSumLength != MAX_DIGITS) goto endIfMax;
+        cmp     LSUMLENGTH, MAX_DIGITS
+        bne     endIfMax
 
-        // Return false due to overflow
-        mov     w0, false
-        // Epilogue: restore registers and return
+        // return false
+        mov     w0, FALSE
         ldr     x30, [sp]
         ldr     x19, [sp, 8]
         ldr     x20, [sp, 16]
         ldr     x21, [sp, 24]
         ldr     x22, [sp, 32]
         ldr     x23, [sp, 40]
-        add     sp, sp, stack_bytecount
+        add     sp, sp, ADD_STACK_BYTECOUNT
         ret
 
-not_max:
-        // sum->digits[sum_length] = 1;
-        add     x0, sum_reg, digits_offset
+endIfMax:
+        // oSum->aulDigits[lSumLength] = 1;
+        add     x0, OSUM, AULDIGITS
         mov     x2, 1
-        str     x2, [x0, sum_length, lsl #3]
+        str     x2, [x0, LSUMLENGTH, lsl 3]
 
-        // sum_length++;
-        add     sum_length, sum_length, 1
+        // lSumLength++;
+        add     LSUMLENGTH, LSUMLENGTH, 1
 
-end_sum:
-        // Set the length of the sum
-        str     sum_length, [sum_reg]
+endIfCarry:
+        // Set the length of the sum.
+        // oSum->lLength = lSumLength;  
+        str     LSUMLENGTH, [OSUM]
 
-        // Epilogue: restore registers and return true
-        mov     w0, true
+        // Epilog return true
+        mov     w0, TRUE
         ldr     x30, [sp]
         ldr     x19, [sp, 8]
         ldr     x20, [sp, 16]
         ldr     x21, [sp, 24]
         ldr     x22, [sp, 32]
         ldr     x23, [sp, 40]
-        add     sp, sp, stack_bytecount
+        add     sp, sp, ADD_STACK_BYTECOUNT
         ret
-.size   BigInt_add, (. - BigInt_add)
+.size   BigInt_add, (. -BigInt_add)
