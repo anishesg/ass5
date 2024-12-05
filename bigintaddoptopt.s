@@ -1,163 +1,163 @@
-// define constants
-.equ    FALSE, 0
-.equ    TRUE, 1
-.equ    EOF, -1
-.equ    MAX_DIGITS, 32768
+// making some constants
+        .equ    false, 0
+        .equ    true, 1
+        .equ    eof, -1
+        .equ    max_digits, 32768
+//----------------------------------------------------------------------
+        
+        .section .rodata
+
 //----------------------------------------------------------------------
 
-.section .rodata
+        .section .data
+
 //----------------------------------------------------------------------
 
-.section .data
+        .section .bss
+
 //----------------------------------------------------------------------
 
-.section .bss
-//----------------------------------------------------------------------
+        .section .text
+        
+        //--------------------------------------------------------------
+        // Add addend1 and addend2, store the result in sum.
+        // Sum should be different from addend1 and addend2.
+        // Return 0 (false) if an overflow occurred,
+        // and 1 (true) otherwise.
+        // int BigInt_add(BigInt_T addend1, BigInt_T addend2, BigInt_T sum)
+        //--------------------------------------------------------------
 
-.section .text
+        // Must be a multiple of 16
+        .equ    stack_bytecount, 48
 
-//--------------------------------------------------------------
-// assigns the sum of addend1 and addend2 to result.
-// result should be distinct from addend1 and addend2.
-// returns 0 (FALSE) if an overflow occurred,
-// and 1 (TRUE) otherwise.
-// int big_int_add(BigInt_T addend1, BigInt_T addend2, BigInt_T result)
-//--------------------------------------------------------------
+        // Local variable registers
+        sum_length      .req x23
+        index           .req x22
 
-// stack size must be a multiple of 16
-.equ    STACK_FRAME_SIZE, 48
+        // Parameter registers
+        sum_reg         .req x21
+        addend2_reg     .req x20
+        addend1_reg     .req x19
 
-// local variable registers
-sum_length      .req x23
-index           .req x22
+        // Structure field offsets
+        .equ    digits_offset, 8
+        
+        .global BigInt_add
 
-// parameter registers
-result          .req x21
-addend2         .req x20
-addend1         .req x19
+BigInt_add:
 
-// structure field offsets
-.equ    DIGITS_OFFSET, 8
+        // Prologue: save registers on the stack
+        sub     sp, sp, stack_bytecount
+        str     x30, [sp]
+        str     x19, [sp, 8]
+        str     x20, [sp, 16]
+        str     x21, [sp, 24]
+        str     x22, [sp, 32]
+        str     x23, [sp, 40]
 
-.global big_int_add
+        // Move parameters into our registers
+        mov     addend1_reg, x0
+        mov     addend2_reg, x1
+        mov     sum_reg, x2
 
-big_int_add:
+        // Determine the larger length (inlined BigInt_larger)
+        ldr     x0, [addend1_reg]
+        ldr     x1, [addend2_reg]
+        cmp     x0, x1
+        ble     else_if_less
+        // sum_length = addend1->lLength;
+        mov     sum_length, x0
+        b       end_if_greater
+else_if_less:
+        // sum_length = addend2->lLength;
+        mov     sum_length, x1
+end_if_greater:
+        // Clear sum's array if necessary
 
-    // prologue: set up the stack frame and save registers
-    sub     sp, sp, STACK_FRAME_SIZE
-    str     x30, [sp]          // save return address
-    str     x19, [sp, 8]       // save x19 (addend1)
-    str     x20, [sp, 16]      // save x20 (addend2)
-    str     x21, [sp, 24]      // save x21 (result)
-    str     x22, [sp, 32]      // save x22 (index)
-    str     x23, [sp, 40]      // save x23 (sum_length)
+        // if (sum->lLength <= sum_length) goto end_if_length;
+        ldr     x0, [sum_reg]
+        cmp     x0, sum_length
+        ble     end_if_length
 
-    // move parameters into callee-saved registers
-    mov     addend1, x0
-    mov     addend2, x1
-    mov     result, x2
+        // memset(sum->digits, 0, max_digits * sizeof(unsigned long));
+        add     x0, sum_reg, digits_offset
+        mov     w1, 0
+        mov     x2, max_digits
+        lsl     x2, x2, 3      // x2 = max_digits * 8
+        bl      memset
+    
+end_if_length:
 
-    // initialize local variables
-    // unsigned long carry;
-    // long index;
-    // long sum_length;
+        // index = 0;
+        mov     index, 0
+        
+// Perform the addition.
 
-    // determine the larger length between addend1 and addend2
-    ldr     x0, [addend1]      // x0 = addend1->length
-    ldr     x1, [addend2]      // x1 = addend2->length
-    cmp     x0, x1
-    ble     use_addend2_length
-    // sum_length = addend1->length;
-    mov     sum_length, x0
-    b       length_determined
-use_addend2_length:
-    // sum_length = addend2->length;
-    mov     sum_length, x1
-length_determined:
-    // check if result's length is sufficient
-    ldr     x0, [result]       // x0 = result->length
-    cmp     x0, sum_length
-    ble     skip_clearing
+sum_loop:
+        // Guarded loop: if index >= sum_length, exit loop
+        cmp     index, sum_length
+        bge     end_if_carry
 
-    // clear result's digits array if necessary
-    // memset(result->digits, 0, MAX_DIGITS * sizeof(unsigned long));
-    add     x0, result, DIGITS_OFFSET  // x0 = result->digits
-    mov     w1, 0                      // value to set
-    mov     x2, MAX_DIGITS
-    lsl     x2, x2, 3                  // x2 = MAX_DIGITS * 8
-    bl      memset                     // call memset
-skip_clearing:
+        // sum->digits[index] = addend1->digits[index] + addend2->digits[index] + carry
+        add     x0, addend1_reg, digits_offset
+        ldr     x0, [x0, index, lsl #3]
+        add     x1, addend2_reg, digits_offset
+        ldr     x1, [x1, index, lsl #3]
+        // Add with carry
+        adcs    x1, x0, x1
+        // Store result in sum
+        add     x0, sum_reg, digits_offset
+        str     x1, [x0, index, lsl #3]
+        
+        // index++;
+        add     index, index, 1
 
-    // initialize index to 0
-    mov     index, 0
+        // Loop back to continue addition
+        b       sum_loop
 
-    // perform the addition loop
-addition_loop:
-    cmp     index, sum_length
-    bge     check_carry
+end_if_carry:
+        // Check for a carry out of the last addition
 
-    // load digits from addend1 and addend2
-    add     x0, addend1, DIGITS_OFFSET
-    ldr     x0, [x0, index, lsl #3]    // x0 = addend1->digits[index]
-    add     x1, addend2, DIGITS_OFFSET
-    ldr     x1, [x1, index, lsl #3]    // x1 = addend2->digits[index]
+        // If no carry occurred, skip to setting sum length
+        bcc     end_sum
 
-    // add the digits with carry
-    adcs    x1, x0, x1                 // x1 = x0 + x1 + carry
+        // If sum_length == max_digits, overflow occurred
+        cmp     sum_length, max_digits
+        bne     not_max
 
-    // store the result digit
-    add     x0, result, DIGITS_OFFSET
-    str     x1, [x0, index, lsl #3]    // result->digits[index] = x1
+        // Return false due to overflow
+        mov     w0, false
+        // Epilogue: restore registers and return
+        ldr     x30, [sp]
+        ldr     x19, [sp, 8]
+        ldr     x20, [sp, 16]
+        ldr     x21, [sp, 24]
+        ldr     x22, [sp, 32]
+        ldr     x23, [sp, 40]
+        add     sp, sp, stack_bytecount
+        ret
 
-    // increment index
-    add     index, index, 1
-    b       addition_loop
+not_max:
+        // sum->digits[sum_length] = 1;
+        add     x0, sum_reg, digits_offset
+        mov     x2, 1
+        str     x2, [x0, sum_length, lsl #3]
 
-check_carry:
-    // check for carry out of the last addition
-    bcc     set_result_length          // if no carry, skip to setting length
+        // sum_length++;
+        add     sum_length, sum_length, 1
 
-    // if sum_length == MAX_DIGITS, overflow occurred
-    cmp     sum_length, MAX_DIGITS
-    beq     return_overflow
+end_sum:
+        // Set the length of the sum
+        str     sum_length, [sum_reg]
 
-    // handle the carry by adding an extra digit
-    add     x0, result, DIGITS_OFFSET
-    mov     x1, 1
-    str     x1, [x0, sum_length, lsl #3]  // result->digits[sum_length] = 1
-
-    // increment sum_length
-    add     sum_length, sum_length, 1
-
-set_result_length:
-    // set the length of the result
-    str     sum_length, [result]       // result->length = sum_length
-
-    // return TRUE (no overflow)
-    mov     w0, TRUE
-
-    // epilogue: restore registers and stack pointer, then return
-    ldr     x30, [sp]
-    ldr     x19, [sp, 8]
-    ldr     x20, [sp, 16]
-    ldr     x21, [sp, 24]
-    ldr     x22, [sp, 32]
-    ldr     x23, [sp, 40]
-    add     sp, sp, STACK_FRAME_SIZE
-    ret
-
-return_overflow:
-    // return FALSE due to overflow
-    mov     w0, FALSE
-
-    // epilogue: restore registers and stack pointer, then return
-    ldr     x30, [sp]
-    ldr     x19, [sp, 8]
-    ldr     x20, [sp, 16]
-    ldr     x21, [sp, 24]
-    ldr     x22, [sp, 32]
-    ldr     x23, [sp, 40]
-    add     sp, sp, STACK_FRAME_SIZE
-    ret
-
-.size   big_int_add, (. - big_int_add)
+        // Epilogue: restore registers and return true
+        mov     w0, true
+        ldr     x30, [sp]
+        ldr     x19, [sp, 8]
+        ldr     x20, [sp, 16]
+        ldr     x21, [sp, 24]
+        ldr     x22, [sp, 32]
+        ldr     x23, [sp, 40]
+        add     sp, sp, stack_bytecount
+        ret
+.size   BigInt_add, (. - BigInt_add)
