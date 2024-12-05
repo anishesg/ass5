@@ -1,11 +1,11 @@
+//-----------------------------------------------------------------------
+// bigint_add_optimized.s
+// Author: anish k
+//-----------------------------------------------------------------------
 
-
-// Define constants
         .equ    false, 0
         .equ    true, 1
         .equ    max_digits, 32768
-
-//-----------------------------------------------------------------------
 
         .section .text
 
@@ -26,29 +26,29 @@ bigint_add:
         stp     x21, x22, [sp]              // Save more callee-saved registers
         add     x29, sp, #32                // Update frame pointer
 
-        // Move parameters into callee-saved registers for efficiency
-        mov     addend1Reg, x0              // addend1
-        mov     addend2Reg, x1              // addend2
-        mov     resultReg, x2               // result
+        // Define register aliases
+        addend1Reg .req x0                  // addend1
+        addend2Reg .req x1                  // addend2
+        resultReg  .req x2                  // result
+        sumLength  .req x4                  // sumLength
+        index      .req x5                  // index
+        tempReg    .req x6                  // Temporary register
 
-        // Local variables
-        // unsigned long sumDigit;
-        // long index;
-        // long sumLength;
+        // Load lengths of addend1 and addend2
+        ldr     x3, [addend1Reg, #0]        // x3 = addend1->lLength
+        ldr     x4, [addend2Reg, #0]        // x4 = addend2->lLength
 
-        // Inline comparison to find the larger length
-        ldr     x0, [addend1Reg]            // x0 = addend1->length
-        ldr     x1, [addend2Reg]            // x1 = addend2->length
-        cmp     x0, x1
-        csel    sumLength, x1, x0, gt       // sumLength = (x0 > x1) ? x0 : x1
+        // Determine the larger length
+        cmp     x3, x4
+        csel    sumLength, x3, x4, gt       // sumLength = (x3 > x4) ? x3 : x4
 
         // Clear result's digit array if necessary
-        ldr     x3, [resultReg]
-        cmp     x3, sumLength
+        ldr     x7, [resultReg, #0]         // x7 = result->lLength
+        cmp     x7, sumLength
         bgt     skip_clear
 
         // Call memset to clear result's digits
-        add     x0, resultReg, #8           // x0 = &result->digits
+        add     x0, resultReg, #8           // x0 = &result->aulDigits
         mov     x1, #0                      // Value to set (0)
         mov     x2, max_digits
         lsl     x2, x2, #3                  // x2 = max_digits * sizeof(unsigned long)
@@ -62,24 +62,27 @@ skip_clear:
         // Clear carry flag before addition
         subs    xzr, xzr, xzr               // Clear carry flag
 
-        // Check if we need to enter the loop
+        // Addition loop
+addition_loop:
         cmp     index, sumLength
         bge     addition_done
 
-addition_loop:
+        // Load digits from addend1 and addend2
+        add     tempReg, addend1Reg, #8
+        ldr     x3, [tempReg, index, lsl #3]    // x3 = addend1->aulDigits[index]
+        add     tempReg, addend2Reg, #8
+        ldr     x4, [tempReg, index, lsl #3]    // x4 = addend2->aulDigits[index]
 
-        // Perform addition with carry
-        ldr     x0, [addend1Reg, index, lsl #3] // x0 = addend1->digits[index]
-        ldr     x1, [addend2Reg, index, lsl #3] // x1 = addend2->digits[index]
-        adcs    x0, x0, x1                      // x0 = x0 + x1 + carry
-        str     x0, [resultReg, index, lsl #3]  // result->digits[index] = x0
+        // Add digits with carry
+        adcs    x3, x3, x4                      // x3 = x3 + x4 + carry
+
+        // Store result digit
+        add     tempReg, resultReg, #8
+        str     x3, [tempReg, index, lsl #3]    // result->aulDigits[index] = x3
 
         // Increment index
         add     index, index, #1
-
-        // Loop condition
-        cmp     index, sumLength
-        blt     addition_loop
+        b       addition_loop
 
 addition_done:
 
@@ -92,30 +95,31 @@ addition_done:
 
         // Store carry in next digit
         mov     x0, #1
-        str     x0, [resultReg, sumLength, lsl #3]
+        add     tempReg, resultReg, #8
+        str     x0, [tempReg, sumLength, lsl #3]
         add     sumLength, sumLength, #1
 
 set_result_length:
 
         // Update result's length
-        str     sumLength, [resultReg]
+        str     sumLength, [resultReg, #0]
 
         // Epilogue: restore registers and return
-        mov     w0, true
-        ldp     x21, x22, [sp]              // Restore registers
+        mov     w0, #1                        // Return true
+        ldp     x21, x22, [sp]                // Restore registers
         ldp     x19, x20, [sp, #16]
         ldp     x29, x30, [sp, #32]
-        add     sp, sp, #48                 // Deallocate stack space
+        add     sp, sp, #48                   // Deallocate stack space
         ret
 
 return_overflow:
 
         // Handle overflow case
-        mov     w0, false
+        mov     w0, #0                        // Return false
         ldp     x21, x22, [sp]
         ldp     x19, x20, [sp, #16]
         ldp     x29, x30, [sp, #32]
         add     sp, sp, #48
         ret
 
-//----------------------------------------------------------------------
+//-----------------------------------------------------------------------
