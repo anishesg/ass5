@@ -62,14 +62,14 @@ BigInt_add:
         
         // figure out the bigger length
         // inline BigInt_larger
-        ldr     x0, [x19]           // length of oaddend1
-        ldr     x1, [x20]           // length of oaddend2
+        ldr     x0, [oaddend1]           // length of oaddend1
+        ldr     x1, [oaddend2]           // length of oaddend2
         cmp     x0, x1
-        ble     handle_less          // if oaddend1 <= oaddend2
-        mov     lsumlen, x0         // sumlen = length of oaddend1
-        b.ne    finish_comparison    // branch if not equal
+        ble     handle_less              // if oaddend1 <= oaddend2
+        mov     lsumlen, x0             // sumlen = length of oaddend1
+        b.ne    finish_comparison        // branch if not equal
 handle_less:
-        mov     lsumlen, x1         // sumlen = length of oaddend2
+        mov     lsumlen, x1             // sumlen = length of oaddend2
 finish_comparison:
         
         // clear osum array if needed
@@ -79,40 +79,41 @@ finish_comparison:
         
         // clear memory (memset)
         add     x0, osum, digits_offset
-        movz    w1, #0              // changed from mov w1, 0
-        movz    x2, #max_digits     // changed from mov x2, max_digits
-        lsl     x2, x2, 3           // max_digits * 8
+        movz    w1, #0                  // changed from mov w1, 0
+        movz    x2, #0x8000             // changed from mov x2, max_digits
+        lsl     x2, x2, 3               // max_digits * 8
         bl      memset
         
 end_clear:
         
         // guarded loop check before initializing lindex
         cmp     lindex, lsumlen
-        bge     end_add              // skip if index >= sumlen
+        bge     end_add                  // skip if index >= sumlen
         
         // initialize index
-        movz    lindex, #0           // changed from mov lindex, 0
+        movz    lindex, #0               // changed from mov lindex, 0
         
 loop_add:
+        // Corrected addressing: include digits_offset
         add     x0, oaddend1, digits_offset
-        ldr     x0, [x19, lindex, lsl #3]  // changed from [oaddend1, lindex, lsl 3]
+        ldr     x0, [x0, lindex, lsl #3] // Access oaddend1->aulDigits[lindex]
         add     x1, oaddend2, digits_offset
-        ldr     x1, [x20, lindex, lsl #3]  // changed from [oaddend2, lindex, lsl 3]
-        adcs    x1, x0, x1           // add with carry
+        ldr     x1, [x1, lindex, lsl #3] // Access oaddend2->aulDigits[lindex]
+        adcs    x1, x0, x1               // add with carry
         add     x0, osum, digits_offset
-        str     x1, [x0, lindex, lsl #3]
+        str     x1, [x0, lindex, lsl #3] // Store sum in osum->aulDigits[lindex]
         
         add     lindex, lindex, 1
         sub     x0, lsumlen, lindex
-        cbnz    x0, loop_add         // continue if index < sumlen
+        cbnz    x0, loop_add             // continue if index < sumlen
         
 end_add:
         // check for carry first
-        bcc     end_carry            // skip if no carry
+        bcc     end_carry                // skip if no carry
         
         // now check for overflow
         cmp     lsumlen, max_digits
-        bne     handle_no_overflow    // changed from bne end_max
+        bne     handle_no_overflow        // changed from bne end_max
         
         // return false if overflow
         mov     w0, false
@@ -120,12 +121,12 @@ end_add:
         
 handle_no_overflow:
         add     x0, osum, digits_offset
-        movz    x2, #1               // changed from mov x2, 1
-        str     x2, [x0, lsumlen, lsl #3]
+        movz    x2, #1                   // changed from mov x2, 1
+        str     x2, [x0, lsumlen, lsl #3]// Store 1 in osum->aulDigits[lsumlen]
         add     lsumlen, lsumlen, 1
         
 end_carry:
-        str     lsumlen, [osum]      // set length in osum
+        str     lsumlen, [osum]          // set length in osum
         
         // return true
         mov     w0, true
